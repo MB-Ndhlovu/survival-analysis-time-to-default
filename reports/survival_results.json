@@ -1,0 +1,168 @@
+{
+  "data_summary": {
+    "n_samples": 5000,
+    "n_defaults": 1200,
+    "n_censored": 3800,
+    "default_rate": 0.24,
+    "censoring_rate": 0.76
+  },
+  "median_survival_by_credit_band": {
+    "< 580 (Subprime)": Infinity,
+    "580-669 (Near-prime)": Infinity,
+    "670-739 (Prime)": Infinity,
+    "740+ (Super-prime)": Infinity
+  },
+  "survival_probabilities": {
+    "< 580 (Subprime)": {
+      "12_month": 0.7873711340206185,
+      "24_month": 0.6275773195876286,
+      "36_month": 0.6275773195876286,
+      "48_month": 0.6275773195876286
+    },
+    "580-669 (Near-prime)": {
+      "12_month": 0.8319892473118282,
+      "24_month": 0.713709677419355,
+      "36_month": 0.713709677419355,
+      "48_month": 0.713709677419355
+    },
+    "670-739 (Prime)": {
+      "12_month": 0.8882438316400579,
+      "24_month": 0.7975326560232217,
+      "36_month": 0.7975326560232217,
+      "48_month": 0.7975326560232217
+    },
+    "740+ (Super-prime)": {
+      "12_month": 0.9175257731958761,
+      "24_month": 0.8483063328424154,
+      "36_month": 0.8483063328424154,
+      "48_month": 0.8483063328424154
+    }
+  },
+  "cox_ph_coefficients": {
+    "credit_score": {
+      "coefficient": -0.003963189037991252,
+      "hazard_ratio": 0.9960446540310747,
+      "hr_95_ci_lower": 0.995099482374441,
+      "hr_95_ci_upper": 0.9969907234366032,
+      "p_value": 2.7937260535276215e-16
+    },
+    "income": {
+      "coefficient": -1.3624675046990753e-06,
+      "hazard_ratio": 0.9999986375334234,
+      "hr_95_ci_lower": 0.9999965153598397,
+      "hr_95_ci_upper": 1.0000007597115108,
+      "p_value": 0.20827480681651048
+    },
+    "employment_years": {
+      "coefficient": -0.0024881524764795806,
+      "hazard_ratio": 0.9975149404091713,
+      "hr_95_ci_lower": 0.9901903676181197,
+      "hr_95_ci_upper": 1.004893694061122,
+      "p_value": 0.5081618601029008
+    },
+    "debt_to_income": {
+      "coefficient": 0.7481011389682427,
+      "hazard_ratio": 2.1129839419674425,
+      "hr_95_ci_lower": 0.17233620870559002,
+      "hr_95_ci_upper": 25.906924450447498,
+      "p_value": 0.5585471968539375
+    },
+    "loan_amount": {
+      "coefficient": -3.688047524937628e-06,
+      "hazard_ratio": 0.9999963119592759,
+      "hr_95_ci_lower": 0.9999901691195068,
+      "hr_95_ci_upper": 1.0000024548367799,
+      "p_value": 0.23930799424331384
+    },
+    "interest_rate": {
+      "coefficient": 0.21880159621298217,
+      "hazard_ratio": 1.2445843219472261,
+      "hr_95_ci_lower": 0.02662857512023686,
+      "hr_95_ci_upper": 58.17022230602394,
+      "p_value": 0.9111840871762126
+    },
+    "LTV_ratio": {
+      "coefficient": 0.1399494004934389,
+      "hazard_ratio": 1.150215597043099,
+      "hr_95_ci_lower": 0.762883230684993,
+      "hr_95_ci_upper": 1.7342050086659977,
+      "p_value": 0.504109985411467
+    }
+  },
+  "new_applicant_prediction": {
+    "profile": {
+      "credit_score": 710.0,
+      "income": 78000.0,
+      "employment_years": 6.2,
+      "debt_to_income": 0.28,
+      "loan_amount": 42000.0,
+      "interest_rate": 0.095,
+      "LTV_ratio": 0.82
+    },
+    "hazard_ratio": 0.9048011485020145,
+    "survival_probabilities": {
+      "12_month": 0.8842340156421412,
+      "24_month": 0.792166252053961,
+      "36_month": 0.792166252053961,
+      "48_month": 0.792166252053961
+    }
+  },
+  "chiizer_summary": [
+    {
+      "Variable": "income",
+      "Bin": "Q2",
+      "N": 1250,
+      "Events": 288,
+      "Event Rate": 0.2304
+    },
+    {
+      "Variable": "income",
+      "Bin": "Q1",
+      "N": 1250,
+      "Events": 327,
+      "Event Rate": 0.2616
+    },
+    {
+      "Variable": "income",
+      "Bin": "Q4",
+      "N": 1250,
+      "Events": 288,
+      "Event Rate": 0.2304
+    },
+    {
+      "Variable": "income",
+      "Bin": "Q3",
+      "N": 1250,
+      "Events": 297,
+      "Event Rate": 0.2376
+    },
+    {
+      "Variable": "loan_amount",
+      "Bin": "Q4",
+      "N": 1250,
+      "Events": 286,
+      "Event Rate": 0.2288
+    },
+    {
+      "Variable": "loan_amount",
+      "Bin": "Q3",
+      "N": 1250,
+      "Events": 309,
+      "Event Rate": 0.2472
+    },
+    {
+      "Variable": "loan_amount",
+      "Bin": "Q2",
+      "N": 1250,
+      "Events": 299,
+      "Event Rate": 0.2392
+    },
+    {
+      "Variable": "loan_amount",
+      "Bin": "Q1",
+      "N": 1250,
+      "Events": 306,
+      "Event Rate": 0.2448
+    }
+  ]
+}
