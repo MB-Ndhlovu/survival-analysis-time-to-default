@@ -1,0 +1,177 @@
+{
+  "data_summary": {
+    "n_loans": 5000,
+    "default_rate": 0.8726,
+    "censored_rate": 0.1274
+  },
+  "km_overall_median_survival": 7.13,
+  "km_band_statistics": [
+    {
+      "band": "< 580",
+      "n_loans": 552,
+      "n_defaults": 544,
+      "median_survival_months": 3.69,
+      "survival_12m": 0.1087,
+      "survival_24m": 0.0145
+    },
+    {
+      "band": "580-669",
+      "n_loans": 1733,
+      "n_defaults": 1650,
+      "median_survival_months": 5.85,
+      "survival_12m": 0.2297,
+      "survival_24m": 0.0479
+    },
+    {
+      "band": "670-739",
+      "n_loans": 1594,
+      "n_defaults": 1352,
+      "median_survival_months": 8.63,
+      "survival_12m": 0.389,
+      "survival_24m": 0.1518
+    },
+    {
+      "band": "740+",
+      "n_loans": 1121,
+      "n_defaults": 817,
+      "median_survival_months": 12.08,
+      "survival_12m": 0.5031,
+      "survival_24m": 0.2712
+    }
+  ],
+  "cox_hazard_ratios": {
+    "income": {
+      "hazard_ratio": 1.0,
+      "coefficient": -0.0,
+      "p_value": 0.0113,
+      "significant": true
+    },
+    "credit_score": {
+      "hazard_ratio": 0.9956,
+      "coefficient": -0.0044,
+      "p_value": 0.0,
+      "significant": true
+    },
+    "employment_years": {
+      "hazard_ratio": 0.9962,
+      "coefficient": -0.0038,
+      "p_value": 0.2078,
+      "significant": false
+    },
+    "debt_to_income": {
+      "hazard_ratio": 3.276,
+      "coefficient": 1.1866,
+      "p_value": 0.0,
+      "significant": true
+    },
+    "loan_amount": {
+      "hazard_ratio": 1.0,
+      "coefficient": 0.0,
+      "p_value": 0.0893,
+      "significant": false
+    },
+    "interest_rate": {
+      "hazard_ratio": 0.9972,
+      "coefficient": -0.0028,
+      "p_value": 0.5919,
+      "significant": false
+    },
+    "LTV_ratio": {
+      "hazard_ratio": 2.0655,
+      "coefficient": 0.7254,
+      "p_value": 0.0,
+      "significant": true
+    }
+  },
+  "cox_concordance_index": 0.6078,
+  "risk_band_summaries": {
+    "DTI": {
+      "High DTI": {
+        "survival_12m": 0.2975,
+        "survival_24m": 0.0966,
+        "median_survival": 6.41
+      },
+      "Low DTI": {
+        "survival_12m": 0.3569,
+        "survival_24m": 0.1572,
+        "median_survival": 7.89
+      },
+      "Medium DTI": {
+        "survival_12m": 0.3307,
+        "survival_24m": 0.1285,
+        "median_survival": 7.37
+      }
+    },
+    "LTV": {
+      "High LTV": {
+        "survival_12m": 0.2729,
+        "survival_24m": 0.0816,
+        "median_survival": 5.83
+      },
+      "Low LTV": {
+        "survival_12m": 0.3443,
+        "survival_24m": 0.1374,
+        "median_survival": 7.89
+      },
+      "Medium LTV": {
+        "survival_12m": 0.3679,
+        "survival_24m": 0.1633,
+        "median_survival": 7.86
+      }
+    },
+    "income": {
+      "High Income": {
+        "survival_12m": 0.3401,
+        "survival_24m": 0.1326,
+        "median_survival": 7.34
+      },
+      "Medium Income": {
+        "survival_12m": 0.3289,
+        "survival_24m": 0.1309,
+        "median_survival": 7.03
+      },
+      "Low Income": {
+        "survival_12m": 0.3161,
+        "survival_24m": 0.1188,
+        "median_survival": 6.9
+      }
+    },
+    "rate": {
+      "Low Rate": {
+        "survival_12m": 0.3131,
+        "survival_24m": 0.1218,
+        "median_survival": 6.74
+      },
+      "High Rate": {
+        "survival_12m": 0.3293,
+        "survival_24m": 0.1254,
+        "median_survival": 7.21
+      },
+      "Medium Rate": {
+        "survival_12m": 0.3427,
+        "survival_24m": 0.1351,
+        "median_survival": 7.45
+      }
+    }
+  },
+  "new_applicant_prediction": {
+    "profile": {
+      "income": 55000,
+      "credit_score": 680,
+      "employment_years": 3.0,
+      "debt_to_income": 0.25,
+      "loan_amount": 15000,
+      "interest_rate": 7.5,
+      "LTV_ratio": 0.75
+    },
+    "survival_probabilities": {
+      "6m": 0.0,
+      "12m": 0.0,
+      "18m": 0.0,
+      "24m": 0.0,
+      "36m": 0.0,
+      "48m": 0.0,
+      "60m": 0.0
+    }
+  }
+}
