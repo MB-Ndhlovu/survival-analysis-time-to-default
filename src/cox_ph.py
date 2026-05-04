@@ -1,163 +1,85 @@
-"""
-Cox Proportional Hazards model for loan default analysis.
-Examines how various factors affect the hazard of default.
-"""
+"""Cox Proportional Hazards model for identifying default risk factors."""
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from lifelines import CoxPHFitter
-from typing import Dict, Tuple
 
-
-def fit_cox_model(df: pd.DataFrame) -> CoxPHFitter:
-    """
-    Fit Cox Proportional Hazards model on loan features.
+def fit_cox_ph_model(df):
+    """Fit Cox PH model to identify risk factors for default.
 
     Args:
-        df: DataFrame with survival data and features
+        df: DataFrame with survival data and covariates
 
     Returns:
-        Fitted CoxPHFitter model
+        CoxPHFitter fitted model and summary DataFrame
     """
+    # Prepare covariates
+    X = df[['income', 'credit_score', 'employment_years',
+            'debt_to_income', 'loan_amount', 'interest_rate', 'LTV_ratio']].copy()
+
+    # Standardize for better coefficient interpretation
+    for col in X.columns:
+        X[col] = (X[col] - X[col].mean()) / X[col].std()
+
+    duration = df['time_end']
+    event = df['event_default']
+
     cph = CoxPHFitter()
-
-    # Select features for the model
-    features = ['credit_score', 'income', 'employment_years', 'debt_to_income',
-               'loan_amount', 'interest_rate', 'LTV_ratio']
-
-    # Prepare data - drop rows with missing values
-    model_df = df[features + ['time_end', 'event_default']].dropna()
-
-    cph.fit(
-        model_df,
-        duration_col='time_end',
-        event_col='event_default'
-    )
+    cph.fit(pd.concat([X, duration, event], axis=1).rename(columns={'time_end': 'duration', 'event_default': 'event'}),
+            duration_col='duration', event_col='event')
 
     return cph
 
-
-def extract_coefficients(cph: CoxPHFitter) -> pd.DataFrame:
-    """
-    Extract Cox model coefficients with hazard ratios and confidence intervals.
-
-    Args:
-        cph: Fitted CoxPHFitter
-
-    Returns:
-        DataFrame with coefficients, hazard ratios, and CI bounds
-    """
+def get_hazard_ratios(cph):
+    """Extract hazard ratios and confidence intervals from fitted model."""
     summary = cph.summary.copy()
     summary['hazard_ratio'] = np.exp(summary['coef'])
-    summary['hr_95CI_lower'] = np.exp(summary['coef lower 95%'])
-    summary['hr_95CI_upper'] = np.exp(summary['coef upper 95%'])
+    summary['hr_lower'] = np.exp(summary['coef lower 95%'])
+    summary['hr_upper'] = np.exp(summary['coef upper 95%'])
 
-    # Reorder columns
-    summary = summary[['coef', 'hazard_ratio', 'hr_95CI_lower', 'hr_95CI_upper', 'p']]
-    summary.columns = ['Coefficient', 'Hazard Ratio', 'HR 95% CI Lower', 'HR 95% CI Upper', 'P-value']
+    return summary[['coef', 'hazard_ratio', 'hr_lower', 'hr_upper', 'p']]
 
-    return summary
+def interpret_coefficients(summary):
+    """Interpret Cox PH coefficients in business terms."""
+    interpretations = {
+        'credit_score': 'Each 1-SD decrease in credit score increases hazard by {hr:.1%}',
+        'interest_rate': 'Each 1-SD increase in interest rate increases hazard by {hr:.1%}',
+        'debt_to_income': 'Each 1-SD increase in DTI ratio increases hazard by {hr:.1%}',
+        'LTV_ratio': 'Each 1-SD increase in LTV ratio increases hazard by {hr:.1%}',
+        'loan_amount': 'Each 1-SD increase in loan amount increases hazard by {hr:.1%}',
+        'income': 'Each 1-SD increase in income decreases hazard by {hr:.1%}',
+        'employment_years': 'Each 1-SD increase in employment years decreases hazard by {hr:.1%}'
+    }
 
+    results = []
+    for var, interp_template in interpretations.items():
+        if var in summary.index:
+            hr = summary.loc[var, 'hazard_ratio']
+            p_val = summary.loc[var, 'p']
+            direction = 'decreases' if hr < 1 else 'increases'
+            interp = interp_template.format(hr=abs(1 - hr))
+            results.append({
+                'variable': var,
+                'hazard_ratio': round(hr, 3),
+                'p_value': round(p_val, 4),
+                'significant': p_val < 0.05,
+                'interpretation': interp
+            })
 
-def print_cox_summary(cph: CoxPHFitter, summary: pd.DataFrame):
-    """Print formatted Cox PH model summary."""
-    print("\n" + "="*70)
-    print("COX PROPORTIONAL HAZARDS MODEL")
-    print("="*70)
+    return pd.DataFrame(results)
 
-    print("\n🔍 Model Concordance:")
-    print(f"   Concordance Index: {cph.concordance_index_:.4f}")
+if __name__ == "__main__":
+    from data_loader import generate_loan_data
 
-    print("\n📉 Coefficient Analysis (sorted by absolute magnitude):")
-    print("-" * 80)
-    print(f"{'Variable':<20} {'Coef':>10} {'HR':>10} {'95% CI':>18} {'P-value':>10}")
-    print("-" * 80)
+    df = generate_loan_data()
+    cph = fit_cox_ph_model(df)
 
-    for var in summary.index:
-        row = summary.loc[var]
-        ci_str = f"[{row['HR 95% CI Lower']:.2f}, {row['HR 95% CI Upper']:.2f}]"
-        sig = "***" if row['P-value'] < 0.001 else "**" if row['P-value'] < 0.01 else "*" if row['P-value'] < 0.05 else ""
-        print(f"{var:<20} {row['Coefficient']:>10.4f} {row['Hazard Ratio']:>10.3f} {ci_str:>18} {row['P-value']:>9.4f} {sig}")
+    print("Cox PH Model Summary:")
+    summary = get_hazard_ratios(cph)
+    print(summary.to_string())
 
-    print("\n📊 Key Risk Drivers (HR interpretation):")
-    print("-" * 50)
-    hr_col = summary['Hazard Ratio']
-
-    # Find biggest risk factors
-    risks = hr_col.sort_values(ascending=False).head(3)
-    print("   ↑ Top risk increase factors:")
-    for var in risks.index:
-        hr = hr_col[var]
-        if hr > 1:
-            pct = (hr - 1) * 100
-            print(f"      - {var}: HR={hr:.3f} (+{pct:.1f}% hazard per unit)")
-
-    # Find protective factors
-    protective = hr_col.sort_values().head(3)
-    print("\n   ↓ Top protective factors:")
-    for var in protective.index:
-        hr = hr_col[var]
-        if hr < 1:
-            pct = (1 - hr) * 100
-            print(f"      - {var}: HR={hr:.3f} (-{pct:.1f}% hazard per unit)")
-
-    return summary
-
-
-def plot_cox_hazard_ratios(summary: pd.DataFrame, save_path: str = None) -> plt.Figure:
-    """
-    Plot hazard ratios with confidence intervals.
-
-    Args:
-        summary: DataFrame with hazard ratios and CI bounds
-        save_path: Optional path to save the figure
-
-    Returns:
-        Matplotlib figure object
-    """
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    y_pos = np.arange(len(summary))
-    hr = summary['Hazard Ratio']
-    ci_low = summary['HR 95% CI Lower']
-    ci_high = summary['HR 95% CI Upper']
-
-    # Horizontal bar chart
-    colors = ['#d62728' if v > 1 else '#2ca02c' for v in hr]
-    ax.barh(y_pos, hr, color=colors, alpha=0.7)
-
-    # Error bars for CI
-    ax.errorbar(hr, y_pos, xerr=[hr - ci_low, ci_high - hr],
-                fmt='none', color='black', capsize=5, alpha=0.7)
-
-    ax.axvline(x=1, color='gray', linestyle='--', alpha=0.7)
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(summary.index)
-    ax.set_xlabel('Hazard Ratio', fontsize=12)
-    ax.set_title('Cox PH Model: Hazard Ratios with 95% CI', fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3, axis='x')
-
-    # Add legend
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='#d62728', alpha=0.7, label='Increases Risk'),
-                      Patch(facecolor='#2ca02c', alpha=0.7, label='Decreases Risk')]
-    ax.legend(handles=legend_elements, loc='upper right')
-
-    plt.tight_layout()
-
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-
-    return fig
-
-
-if __name__ == '__main__':
-    from data_loader import generate_loan_data, add_credit_bands
-
-    df = add_credit_bands(generate_loan_data())
-    cph = fit_cox_model(df)
-    summary = extract_coefficients(cph)
-    print_cox_summary(cph, summary)
-    plot_cox_hazard_ratios(summary, 'cox_hr.png')
-    print("\n✅ Cox PH analysis complete")
+    print("\nInterpretation:")
+    interp = interpret_coefficients(summary)
+    for _, row in interp.iterrows():
+        sig = "***" if row['significant'] else ""
+        print(f"  {row['variable']}: HR={row['hazard_ratio']} {sig} — {row['interpretation']}")

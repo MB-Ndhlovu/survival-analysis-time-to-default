@@ -1,189 +1,103 @@
-"""
-Risk Chiizer - bin continuous variables into risk categories
-and compute survival curves for each bin.
-"""
+"""Risk Chiizer: Bin continuous variables into risk categories and compare survival curves."""
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from lifelines import KaplanMeierFitter
 
+def bin_variable(values, n_bins=4, labels=None):
+    """Bin continuous variable into quantiles."""
+    if labels is None:
+        labels = [f'Q{i+1}' for i in range(n_bins)]
+    try:
+        bins = pd.qcut(values, q=n_bins, labels=labels, duplicates='drop')
+    except ValueError:
+        bins = pd.cut(values, bins=n_bins, labels=labels[:n_bins])
+    return bins
 
-def create_risk_bins(df: pd.DataFrame, variable: str, n_bins: int = 4, strategy: str = 'quantile') -> pd.Series:
-    """
-    Bin a continuous variable into risk categories.
+def chiize_variable(df, variable, n_bins=4, time_col='time_end', event_col='event_default'):
+    """Build risk chiizer for a continuous variable.
 
     Args:
-        df: DataFrame containing the variable
+        df: DataFrame with survival data
         variable: Column name to bin
-        n_bins: Number of bins to create
-        strategy: 'quantile' for equal-frequency, 'uniform' for equal-width
-
-    Returns:
-        Series with bin labels
-    """
-    if strategy == 'quantile':
-        labels = pd.qcut(df[variable], q=n_bins, labels=[f'Q{i+1}' for i in range(n_bins)], duplicates='drop')
-    else:
-        labels = pd.cut(df[variable], bins=n_bins, labels=[f'Q{i+1}' for i in range(n_bins)])
-
-    return labels
-
-
-def build_chiizer_matrix(df: pd.DataFrame, variables: list, n_bins: int = 4) -> pd.DataFrame:
-    """
-    Create a chiizer matrix showing survival characteristics by risk bin.
-
-    Args:
-        df: DataFrame with survival data
-        variables: List of variable names to chiize
-        n_bins: Number of bins for each variable
-
-    Returns:
-        DataFrame with summary statistics by variable and bin
-    """
-    results = []
-
-    for var in variables:
-        try:
-            bins = create_risk_bins(df, var, n_bins)
-            df_temp = df.copy()
-            df_temp['bin'] = bins
-
-            for bin_label in bins.unique():
-                if pd.isna(bin_label):
-                    continue
-                bin_df = df_temp[df_temp['bin'] == bin_label]
-                n_obs = len(bin_df)
-                n_events = bin_df['event_default'].sum()
-                event_rate = n_events / n_obs if n_obs > 0 else 0
-
-                results.append({
-                    'Variable': var,
-                    'Bin': str(bin_label),
-                    'N': n_obs,
-                    'Events': n_events,
-                    'Event Rate': event_rate
-                })
-        except Exception as e:
-            print(f"Warning: Could not chiize {var}: {e}")
-            continue
-
-    return pd.DataFrame(results)
-
-
-def plot_survival_by_bin(df: pd.DataFrame, variable: str, n_bins: int = 4,
-                        title: str = None, save_path: str = None) -> plt.Figure:
-    """
-    Plot Kaplan-Meier survival curves for each bin of a variable.
-
-    Args:
-        df: DataFrame with survival data
-        variable: Column to bin and plot
         n_bins: Number of bins
-        title: Plot title
-        save_path: Optional save path
+        time_col: Column for time
+        event_col: Column for event indicator
 
     Returns:
-        Matplotlib figure
+        dict with bin labels, kmf objects, and survival probabilities
     """
+    df = df.copy()
+    df['bin'] = bin_variable(df[variable], n_bins)
+
+    results = {'variable': variable, 'bins': {}}
+
+    for bin_label in df['bin'].unique():
+        bin_df = df[df['bin'] == bin_label]
+        kmf = KaplanMeierFitter()
+        kmf.fit(bin_df[time_col], bin_df[event_col], label=f'{variable}: {bin_label}')
+
+        median = kmf.median_survival_time_
+        
+        sf = kmf.survival_function_
+        survival_12 = float(sf.loc[sf.index <= 12].iloc[-1].values[0]) if len(sf) > 0 and sf.index[-1] >= 12 else None
+        survival_24 = float(sf.loc[sf.index <= 24].iloc[-1].values[0]) if len(sf) > 0 and sf.index[-1] >= 24 else None
+
+        results['bins'][bin_label] = {
+            'kmf': kmf,
+            'median_survival': median,
+            'survival_12m': survival_12,
+            'survival_24m': survival_24,
+            'n': len(bin_df)
+        }
+
+    return results
+
+def plot_chiizer(results, save_path='reports/risk_chiizer.png'):
+    """Plot survival curves for all bins of a chiized variable."""
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    bins = create_risk_bins(df, variable, n_bins)
-    df_plot = df.copy()
-    df_plot['bin'] = bins
+    colors = plt.cm.viridis(np.linspace(0, 0.8, len(results['bins'])))
 
-    kmf = KaplanMeierFitter()
+    for (bin_label, data), color in zip(results['bins'].items(), colors):
+        kmf = data['kmf']
+        ax = kmf.plot_survival_function(ax=ax, color=color, linewidth=2, label=bin_label)
 
-    # Color map for bins
-    colors = plt.cm.viridis(np.linspace(0.2, 0.8, n_bins))
-
-    for i, bin_label in enumerate(sorted(bins.unique(), key=str)):
-        if pd.isna(bin_label):
-            continue
-        bin_df = df_plot[df_plot['bin'] == bin_label]
-        kmf.fit(bin_df['time_end'], bin_df['event_default'], label=f'{variable} {bin_label}')
-        kmf.plot_survival_function(ax=ax, color=[colors[i]])
-
-    ax.set_title(title or f'Survival Curves by {variable} Risk Bins', fontsize=14, fontweight='bold')
-    ax.set_xlabel('Time (Months)', fontsize=12)
+    ax.set_xlabel('Months Since Origination', fontsize=12)
     ax.set_ylabel('Survival Probability', fontsize=12)
+    ax.set_title(f'Survival Curves by {results["variable"].replace("_", " ").title()} Quartile', fontsize=14, fontweight='bold')
+    ax.legend(loc='lower left')
     ax.grid(True, alpha=0.3)
+    ax.set_ylim(0, 1.05)
 
     plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
 
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    return save_path
 
-    return fig
+def chiizer_summary(chiizer_results):
+    """Summarize chiizer results as a table."""
+    rows = []
+    for bin_label, data in chiizer_results['bins'].items():
+        rows.append({
+            'bin': bin_label,
+            'n': data['n'],
+            'median_survival': f"{data['median_survival']:.1f}" if data['median_survival'] else 'Not reached',
+            '12m_survival': f"{data['survival_12m']:.1%}" if data['survival_12m'] else 'N/A',
+            '24m_survival': f"{data['survival_24m']:.1%}" if data['survival_24m'] else 'N/A'
+        })
 
+    return pd.DataFrame(rows)
 
-def chiize_income(df: pd.DataFrame) -> pd.DataFrame:
-    """Chiize income into risk categories."""
-    df = df.copy()
-    df['income_bin'] = pd.cut(df['income'],
-                              bins=[0, 50000, 80000, 120000, float('inf')],
-                              labels=['Low (<50k)', 'Medium (50-80k)', 'High (80-120k)', 'Very High (120k+)'])
-    return df
+if __name__ == "__main__":
+    from data_loader import generate_loan_data
 
+    df = generate_loan_data()
 
-def chiize_dti(df: pd.DataFrame) -> pd.DataFrame:
-    """Chiize debt-to-income into risk categories."""
-    df = df.copy()
-    df['dti_bin'] = pd.cut(df['debt_to_income'],
-                          bins=[0, 0.15, 0.25, 0.35, 1.0],
-                          labels=['Low (<15%)', 'Medium (15-25%)', 'High (25-35%)', 'Very High (>35%)'])
-    return df
-
-
-def chiize_loan_amount(df: pd.DataFrame) -> pd.DataFrame:
-    """Chiize loan amount into risk categories."""
-    df = df.copy()
-    df['loan_bin'] = pd.cut(df['loan_amount'],
-                           bins=[0, 20000, 40000, 70000, float('inf')],
-                           labels=['Small (<20k)', 'Medium (20-40k)', 'Large (40-70k)', 'Very Large (70k+)'])
-    return df
-
-
-def chiize_all(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply all chiizations to a DataFrame."""
-    df = chiize_income(df)
-    df = chiize_dti(df)
-    df = chiize_loan_amount(df)
-    return df
-
-
-def print_chiizer_summary(matrix: pd.DataFrame):
-    """Print formatted chiizer matrix summary."""
-    print("\n" + "="*70)
-    print("RISK CHIIZER SUMMARY")
-    print("="*70)
-
-    for var in matrix['Variable'].unique():
-        var_df = matrix[matrix['Variable'] == var].sort_values('Bin')
-        print(f"\n📊 {var.upper()} Risk Bins:")
-        print("-" * 50)
-        print(f"{'Bin':<20} {'N':>8} {'Defaults':>10} {'Event Rate':>12}")
-        print("-" * 50)
-        for _, row in var_df.iterrows():
-            bar = '█' * int(row['Event Rate'] * 20)
-            print(f"{row['Bin']:<20} {row['N']:>8} {int(row['Events']):>10} {row['Event Rate']:>11.1%} {bar}")
-
-    return matrix
-
-
-if __name__ == '__main__':
-    from data_loader import generate_loan_data, add_credit_bands
-
-    df = add_credit_bands(generate_loan_data())
-    df = chiize_all(df)
-
-    variables = ['income', 'debt_to_income', 'loan_amount']
-    matrix = build_chiizer_matrix(df, variables)
-
-    print_chiizer_summary(matrix)
-
-    for var in variables:
-        plot_survival_by_bin(df, var, title=f'Survival by {var} Risk')
-
-    print("\n✅ Risk chiizer complete")
+    for var in ['income', 'loan_amount', 'interest_rate']:
+        result = chiize_variable(df, var)
+        summary = chiizer_summary(result)
+        print(f"\n{var.upper()} Chiizer:")
+        print(summary.to_string(index=False))

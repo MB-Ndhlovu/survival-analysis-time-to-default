@@ -1,102 +1,60 @@
-# Project 6: Time-to-Default Survival Analysis
+# Time-to-Default Survival Analysis
 
 ## Overview
 
-This project applies survival analysis techniques to loan default data, answering the critical question in credit risk: **not just whether a borrower will default, but WHEN**.
+This project applies survival analysis techniques to credit risk modeling, moving beyond binary default classification to predict **when** default is likely to occur—not just whether it will happen.
 
 ## Survival Analysis Concepts
 
 ### What is Survival Analysis?
+Survival analysis is a branch of statistics that models time-to-event data. In credit risk, the "event" is loan default, and the "time" is months until default.
 
-Survival analysis is a branch of statistics that studies the time until an event occurs — often called "time-to-event" analysis. Unlike traditional regression, it handles:
+### Key Concepts
+- **Survival Function S(t)**: The probability that a loan survives beyond time t without defaulting
+- **Hazard Function h(t)**: The instantaneous rate of default at time t, given survival up to t
+- **Censoring**: When a loan does not default during the observation period—it is "censored" at the observation end
+- **Kaplan-Meier Estimator**: Non-parametric estimator of the survival function
+- **Cox Proportional Hazards Model**: Semi-parametric model for the hazard function
 
-- **Censoring**: Some observations haven't experienced the event by the end of the study period
-- **Truncated data**: Not all subjects enter the study at the same time
-- **Skewed distributions**: Event times are typically right-skewed
+### Why Survival Analysis for Credit Risk?
+- Binary models only answer: "Will this loan default?"
+- Survival analysis answers: "When will this loan default, and what's the probability it survives 12/24 months?"
+- Enables better pricing, provisioning, and risk management
+- Handles censored data correctly (loans that haven't defaulted yet)
 
-### Key Functions
+## Business Application
 
-- **Survival Function S(t)**: Probability that the event has not occurred by time t
-- **Hazard Function h(t)**: Instantaneous rate of event occurrence at time t
-- **Cumulative Hazard H(t)**: Total hazard accumulated up to time t
+This analysis segments borrowers by credit score bands and identifies which factors most influence default timing:
 
-### Key Techniques
+| Credit Band | Score Range | Risk Profile |
+|-------------|-------------|--------------|
+| Deep Subprime | < 580 | High risk, fast default timing |
+| Subprime | 580-669 | Elevated risk |
+| Near Prime | 670-739 | Moderate risk |
+| Prime | 740+ | Low risk, extended survival |
 
-1. **Kaplan-Meier Estimator**: Non-parametric estimate of the survival function
-2. **Cox Proportional Hazards Model**: Semi-parametric regression model for survival data
-3. **Risk Chiizer**: Binning continuous variables into risk categories for segment analysis
+## Files
 
-## Business Application in Credit Risk
+- `src/data_loader.py` — Synthetic loan data generator (5000 loans, ~35% censored at 24 months)
+- `src/kaplan_meier.py` — Kaplan-Meier survival curves by credit band
+- `src/cox_ph.py` — Cox Proportional Hazards model for risk factor analysis
+- `src/chiizer.py` — Risk chiizer: bin variables into categories and compare survival
+- `src/predict_survival.py` — Predict survival curve for a new applicant
+- `run_pipeline.py` — Execute full analysis pipeline
 
-### Why Survival Analysis for Loan Default?
-
-Traditional default models output a binary probability (will default / won't default). Survival analysis enhances this by:
-
-| Traditional Model | Survival Analysis |
-|-------------------|------------------|
-| Will borrower default? | When is default most likely? |
-| Static probability | Dynamic risk over time |
-| Nocensoring handling | Handles censored loans naturally |
-| Point-in-time view | Time-varying risk profile |
-
-### Use Cases
-
-1. **Risk-Based Pricing**: Adjust interest rates based on expected time-to-default
-2. **Provisioning**: Calculate expected loss reserves at different time horizons
-3. **Early Warning Systems**: Identify borrowers approaching high-risk periods
-4. **Segmentation**: Stratify portfolio by survival probability curves
-
-### Key Metrics
-
-- **12-month / 24-month Survival Probability**: Probability the loan survives past specific milestones
-- **Median Time-to-Default**: Time at which 50% of loans in a segment have defaulted
-- **Hazard Ratios**: Relative risk increase per unit change in predictor variables
-
-## Project Structure
+## Requirements
 
 ```
-survival-analysis-time-to-default/
-├── README.md
-├── requirements.txt
-├── src/
-│   ├── __init__.py
-│   ├── data_loader.py       # Generate synthetic loan data
-│   ├── kaplan_meier.py      # Kaplan-Meier survival curves
-│   ├── cox_ph.py           # Cox Proportional Hazards model
-│   ├── chiizer.py          # Risk chiizer - binning & segmentation
-│   └── predict_survival.py  # Predict survival for new applicants
-├── run_pipeline.py         # Execute full analysis pipeline
-└── reports/
-    └── survival_results.json
+lifelines>=0.27.0
+scikit-learn>=1.0.0
+pandas>=1.5.0
+numpy>=1.21.0
+matplotlib>=3.5.0
 ```
 
-## Results Interpretation
-
-### Credit Score Bands
-
-Loans are segmented into FICO-style bands:
-- **< 580**: Subprime — Highest default hazard
-- **580-669**: Near-prime — Elevated risk
-- **670-739**: Prime — Moderate risk
-- **740+**: Super-prime — Lowest risk
-
-### Cox PH Coefficients
-
-Positive coefficients indicate factors that **increase** default hazard (reduce survival time). Key predictors:
-
-- Higher credit scores → Lower hazard (protective)
-- Higher income → Lower hazard (protective)
-- Higher debt-to-income → Higher hazard (risky)
-- Higher interest rates → Higher hazard (risky)
-
-## Installation
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
-```
-
-## Usage
-
-```bash
 python run_pipeline.py
 ```
