@@ -2,59 +2,55 @@
 
 ## Overview
 
-This project applies survival analysis techniques to credit risk modeling, moving beyond binary default classification to predict **when** default is likely to occur—not just whether it will happen.
+This project applies survival analysis techniques to credit risk modeling, moving beyond binary default prediction to understand *when* default is likely to occur.
 
 ## Survival Analysis Concepts
 
 ### What is Survival Analysis?
-Survival analysis is a branch of statistics that models time-to-event data. In credit risk, the "event" is loan default, and the "time" is months until default.
+Survival analysis is a branch of statistics that models time-to-event data. In credit risk, the "event" is loan default, and we analyze how long it takes for defaults to occur.
 
 ### Key Concepts
-- **Survival Function S(t)**: The probability that a loan survives beyond time t without defaulting
-- **Hazard Function h(t)**: The instantaneous rate of default at time t, given survival up to t
-- **Censoring**: When a loan does not default during the observation period—it is "censored" at the observation end
-- **Kaplan-Meier Estimator**: Non-parametric estimator of the survival function
-- **Cox Proportional Hazards Model**: Semi-parametric model for the hazard function
+- **Survival Function S(t)**: The probability that no default has occurred by time t
+- **Hazard Function h(t)**: The instantaneous rate of default at time t, given survival to that point
+- **Censoring**: When a loan is still active at the study end (not yet defaulted) — we know it survived at least that long
+- **Median Survival Time**: Time at which 50% of loans have defaulted
 
-### Why Survival Analysis for Credit Risk?
-- Binary models only answer: "Will this loan default?"
-- Survival analysis answers: "When will this loan default, and what's the probability it survives 12/24 months?"
-- Enables better pricing, provisioning, and risk management
-- Handles censored data correctly (loans that haven't defaulted yet)
+### Methods Used
+1. **Kaplan-Meier Estimator**: Non-parametric estimate of the survival function
+2. **Cox Proportional Hazards Model**: Semi-parametric model for covariates' effect on hazard
 
 ## Business Application
 
-This analysis segments borrowers by credit score bands and identifies which factors most influence default timing:
+Traditional credit scoring answers: *Will this borrower default?*
 
-| Credit Band | Score Range | Risk Profile |
-|-------------|-------------|--------------|
-| Deep Subprime | < 580 | High risk, fast default timing |
-| Subprime | 580-669 | Elevated risk |
-| Near Prime | 670-739 | Moderate risk |
-| Prime | 740+ | Low risk, extended survival |
+Survival analysis answers: *When will this borrower default, and how does that vary by risk profile?*
 
-## Files
+This allows lenders to:
+- Optimize pricing by risk segment
+- Set dynamic monitoring triggers based on time-varying risk
+- Better estimate loss reserves and expected exposure at default
 
-- `src/data_loader.py` — Synthetic loan data generator (5000 loans, ~35% censored at 24 months)
-- `src/kaplan_meier.py` — Kaplan-Meier survival curves by credit band
-- `src/cox_ph.py` — Cox Proportional Hazards model for risk factor analysis
-- `src/chiizer.py` — Risk chiizer: bin variables into categories and compare survival
-- `src/predict_survival.py` — Predict survival curve for a new applicant
-- `run_pipeline.py` — Execute full analysis pipeline
-
-## Requirements
+## Project Structure
 
 ```
-lifelines>=0.27.0
-scikit-learn>=1.0.0
-pandas>=1.5.0
-numpy>=1.21.0
-matplotlib>=3.5.0
+├── README.md
+├── requirements.txt
+├── run_pipeline.py
+├── src/
+│   ├── __init__.py
+│   ├── data_loader.py
+│   ├── kaplan_meier.py
+│   ├── cox_ph.py
+│   ├── chiizer.py
+│   └── predict_survival.py
+└── reports/
+    └── survival_results.json
 ```
 
-## Quick Start
+## Key Outputs
 
-```bash
-pip install -r requirements.txt
-python run_pipeline.py
-```
+- Kaplan-Meier survival curves by credit score band
+- Median time to default per segment
+- Cox PH hazard ratios identifying key default drivers
+- 12 and 24-month survival probabilities
+- Predicted survival curve for new applicants

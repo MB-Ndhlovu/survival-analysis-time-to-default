@@ -1,120 +1,114 @@
-"""Predict survival function for a new loan applicant."""
-
-import numpy as np
 import pandas as pd
-from lifelines import KaplanMeierFitter, CoxPHFitter
+import numpy as np
+import matplotlib.pyplot as plt
+from lifelines import KaplanMeierFitter
 
-def predict_survival_new_applicant(cph, applicant, time_points=None):
-    """Predict survival curve for a new applicant using fitted Cox PH model.
+def create_credit_bands(df):
+    """Create credit score bands."""
+    bins = [0, 580, 670, 740, 900]
+    labels = ['Poor (<580)', 'Fair (580-669)', 'Good (670-739)', 'Excellent (740+)']
+    df['credit_band'] = pd.cut(df['credit_score'], bins=bins, labels=labels, include_lowest=True)
+    return df
 
-    Args:
-        cph: Fitted CoxPHFitter
-        applicant: dict with feature values (income, credit_score, etc.)
-        time_points: Array of time points to predict at (default: 1-36 months)
-
-    Returns:
-        dict with predicted survival probabilities at each time point
-    """
-    if time_points is None:
-        time_points = np.arange(1, 37)
-
-    features = ['income', 'credit_score', 'employment_years',
-                'debt_to_income', 'loan_amount', 'interest_rate', 'LTV_ratio']
-
-    # Get training data means and stds from Cox PH (stored in fitted model)
-    train_means = {}
-    train_stds = {}
-
-    # Reconstruct from model's training data summary
-    for f in features:
-        train_means[f] = cph.baseline_hazard_.index.get_level_values(f).mean()
-        train_stds[f] = cph.baseline_hazard_.index.get_level_values(f).std()
-
-    # Normalize applicant features
-    normalized = {}
-    for f in features:
-        val = applicant.get(f, train_means[f])
-        normalized[f] = (val - train_means[f]) / train_stds[f]
-
-    # Create input dataframe
-    X = pd.DataFrame([normalized])
-
-    # Get baseline survival
-    baseline_survival = cph.baseline_survival_
-
-    # Calculate predicted survival using Cox PH formula
-    # S(t|x) = S0(t)^exp(x*beta)
-    linear_predictor = sum(X.iloc[0][f] * cph.params_[f] for f in features if f in cph.params_)
-
-    predictions = {}
-    for t in time_points:
-        baseline_haz = baseline_survival.loc[t, 'baseline_survival'] if t in baseline_survival.index else baseline_survival.iloc[-1, 0]
-        predictions[int(t)] = baseline_haz ** np.exp(linear_predictor)
-
-    return predictions
-
-def predict_with_kmf(applicant_closest, kmf_by_credit_band):
-    """Predict survival using nearest credit band's Kaplan-Meier curve."""
-    import sys
-    sys.path.insert(0, '/home/workspace/Projects/survival-analysis-time-to-default/src')
-    from kaplan_meier import get_credit_band
-
-    band = get_credit_band(applicant_closest['credit_score'])
-    kmf = kmf_by_credit_band[band]['kmf']
-
-    time_points = np.arange(1, 37)
-    survival_probs = []
-
-    for t in time_points:
-        sf = kmf.survival_function_
-        if len(sf) == 0:
-            survival_probs.append(0.5)
-        else:
-            nearest_idx = sf.index.get_indexer([t], method='ffill')[0]
-            nearest_idx = max(0, min(nearest_idx, len(sf) - 1))
-            prob = float(sf.iloc[nearest_idx].values[0])
-            survival_probs.append(prob)
-
-    return {
-        'band': band,
-        'time_points': list(time_points),
-        'survival_probabilities': survival_probs
-    }
-
-def new_applicant_example():
-    """Example new applicant profile for survival prediction."""
-    return {
-        'income': 75,  # $75k annual income
-        'credit_score': 720,
-        'employment_years': 4.5,
-        'debt_to_income': 0.28,
-        'loan_amount': 120,  # $120k loan
-        'interest_rate': 0.065,
-        'LTV_ratio': 0.75
-    }
+def predict_survival_for_applicant(cph, applicant, kmf_by_band):
+    """Predict survival curve for a new loan applicant."""
+    # Prepare applicant data
+    app_df = pd.DataFrame([applicant])
+    
+    # Log transforms
+    app_df['log_income'] = np.log(applicant['income'])
+    app_df['log_loan'] = np.log(applicant['loan_amount'])
+    
+    # Predict hazard using Cox model
+    partial_hazard = cph.predict_partial_hazard(app_df)
+    
+    print(f"\n=== New Applicant Prediction ===")
+    print(f"Credit Score: {applicant['credit_score']}")
+    print(f"Income: ${applicant['income']:,.0f}")
+    print(f"Loan Amount: ${applicant['loan_amount']:,.0f}")
+    print(f"Interest Rate: {applicant['interest_rate']:.2f}%")
+    print(f"Debt-to-Income: {applicant['debt_to_income']:.3f}")
+    print(f"LTV Ratio: {applicant['LTV_ratio']:.3f}")
+    print(f"Employment Years: {applicant['employment_years']}")
+    
+    # Determine credit band
+    score = applicant['credit_score']
+    if score < 580:
+        band = 'Poor (<580)'
+    elif score < 670:
+        band = 'Fair (580-669)'
+    elif score < 740:
+        band = 'Good (670-739)'
+    else:
+        band = 'Excellent (740+)'
+    
+    print(f"Credit Band: {band}")
+    print(f"Relative Hazard vs Baseline: {partial_hazard.values[0]:.4f}")
+    
+    # Plot comparison with band
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Plot band survival function
+    band_data = kmf_by_band.get(band)
+    if band_data:
+        band_km = KaplanMeierFitter()
+        # Get the underlying survival timeline from the fitted kmf
+        times = band_data.survival_function_.index
+        surv_probs = band_data.survival_function_.iloc[:, 0]
+        ax.plot(times, surv_probs, label=f'Credit Band: {band}', linewidth=2)
+        ax.fill_between(times, surv_probs * 0.95, surv_probs * 1.02, alpha=0.2)
+    
+    ax.set_xlabel('Time (months)')
+    ax.set_ylabel('Survival Probability')
+    ax.set_title(f'Predicted Survival Curve for New Applicant (Credit Score: {score})')
+    ax.legend(loc='lower left')
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim(0, 1.05)
+    ax.set_xlim(0, 24)
+    
+    # Add annotation for key time points
+    if band_data:
+        s12 = band_data.predict(12)
+        s24 = band_data.predict(24)
+        ax.axhline(y=s12, color='gray', linestyle='--', alpha=0.5)
+        ax.axvline(x=12, color='gray', linestyle='--', alpha=0.5)
+        ax.annotate(f'12m: {s12:.1%}', xy=(12, s12), xytext=(14, s12 + 0.05),
+                   fontsize=9, arrowprops=dict(arrowstyle='->', color='gray'))
+        ax.annotate(f'24m: {s24:.1%}', xy=(24, s24), xytext=(20, s24 - 0.08),
+                   fontsize=9, arrowprops=dict(arrowstyle='->', color='gray'))
+    
+    plt.tight_layout()
+    plt.savefig('/home/workspace/Projects/survival-analysis-time-to-default/reports/applicant_survival.png', dpi=150)
+    plt.close()
+    
+    return {'credit_band': band, 'partial_hazard': partial_hazard.values[0]}
 
 if __name__ == "__main__":
     from data_loader import generate_loan_data
-    from kaplan_meier import fit_kaplan_meier, get_credit_band
-    from cox_ph import fit_cox_ph_model
-
+    from kaplan_meier import create_credit_bands
+    from cox_ph import fit_cox_ph
+    
     df = generate_loan_data()
-    km_results = fit_kaplan_meier(df)
-    cph = fit_cox_ph_model(df)
-
-    applicant = new_applicant_example()
-    print(f"Applicant: Credit Score {applicant['credit_score']} ({get_credit_band(applicant['credit_score'])})")
-
-    # Using Cox PH
-    print("\nUsing Cox PH model:")
-    predictions = predict_survival_new_applicant(cph, applicant)
-    for t in [12, 24, 36]:
-        print(f"  {t}-month survival probability: {predictions.get(t, 0):.1%}")
-
-    # Using Kaplan-Meier band
-    print("\nUsing Kaplan-Meier band:")
-    km_pred = predict_with_kmf(applicant, km_results)
-    for t in [12, 24, 36]:
-        idx = t - 1
-        if idx < len(km_pred['survival_probabilities']):
-            print(f"  {t}-month survival probability: {km_pred['survival_probabilities'][idx]:.1%}")
+    df = create_credit_bands(df)
+    
+    cph, cox_results = fit_cox_ph(df)
+    
+    kmf_dict = {}
+    for band in ['Poor (<580)', 'Fair (580-669)', 'Good (670-739)', 'Excellent (740+)']:
+        band_data = df[df['credit_band'] == band]
+        kmf = KaplanMeierFitter()
+        kmf.fit(band_data['time_end'], band_data['event_default'])
+        kmf_dict[band] = kmf
+    
+    new_applicant = {
+        'income': 85000,
+        'credit_score': 720,
+        'employment_years': 6,
+        'debt_to_income': 0.35,
+        'loan_amount': 180000,
+        'interest_rate': 8.5,
+        'LTV_ratio': 0.75
+    }
+    
+    result = predict_survival_for_applicant(cph, new_applicant, kmf_dict)
+    print(f"\nPrediction: {result}")
