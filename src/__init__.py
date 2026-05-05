@@ -1,1 +1,1 @@
-"""Survival Analysis Time-to-Default Package."""
+# Survival Analysis Time-to-Default

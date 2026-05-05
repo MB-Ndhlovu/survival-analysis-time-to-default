@@ -2,33 +2,65 @@
 
 ## Overview
 
-This project applies survival analysis techniques to credit risk modeling. Unlike traditional binary default models, survival analysis answers not just *if* a default will occur, but *when* — providing richer information for risk assessment, pricing, and capital allocation.
+This project applies survival analysis techniques to credit risk modeling, moving beyond binary default prediction to understand *when* default is likely to occur.
 
 ## Survival Analysis Concepts
 
-**Survival Function S(t)** — The probability that a loan survives beyond time t without default.
+### What is Survival Analysis?
 
-**Hazard Function h(t)** — The instantaneous failure rate at time t, given survival up to t.
+Survival analysis is a branch of statistics that models time-to-event data. Unlike classification models that predict *if* an event occurs, survival models predict *when* it occurs — while properly handling censored observations (loans that haven't defaulted yet but also haven't reached the end of the observation window).
 
-**Censoring** — When a loan is paid off, refinanced, or hasn't defaulted by the observation end, we only know it survived to that point. This is called right-censoring.
+### Key Concepts
 
-**Kaplan-Meier Estimator** — Non-parametric estimator of the survival function that properly handles censored data.
+- **Survival Function S(t)**: The probability that the event (default) has not occurred by time t
+- **Hazard Function h(t)**: The instantaneous rate of default at time t, given survival up to t
+- **Censoring**: When a loan exits the observation window without experiencing the event (paid off, still active at cutoff)
+- **Median Survival Time**: The time at which 50% of loans have defaulted (or S(t) = 0.5)
 
-**Cox Proportional Hazards Model** — Semi-parametric model that estimates the effect of covariates on the hazard rate.
+### Methods Used
 
-## Business Application
+1. **Kaplan-Meier Estimator**: Non-parametric estimator of the survival function, allows comparison across groups
+2. **Cox Proportional Hazards Model**: Semi-parametric model estimating the effect of covariates on hazard
+3. **Risk Chiizer**: Binning continuous variables into risk categories for segment-level survival curves
 
-For credit risk managers, survival analysis enables:
-- **Better risk pricing** — Price loans based on expected default timing, not just probability
-- **Loss forecasting** — Estimate when defaults are most likely to occur
-- **Portfolio management** — Identify high-risk segments early
-- **Capital requirements** — More accurate expected loss calculations
+## Business Application in Credit Risk
 
-## Files
+Traditional default models output a probability of default (PD) over a fixed horizon. Survival analysis enriches this by:
 
-- `src/data_loader.py` — Generate synthetic loan data with survival outcomes
-- `src/kaplan_meier.py` — Kaplan-Meier survival curves by credit score band
-- `src/cox_ph.py` — Cox PH model for hazard ratio estimation
-- `src/chiizer.py` — Discretize variables into risk categories
-- `src/predict_survival.py` — Predict survival for new applicants
-- `run_pipeline.py` — Execute full analysis pipeline
+- Providing time-varying default probabilities
+- Enabling precise 12-month and 24-month survival rates by segment
+- Identifying which risk factors accelerate or delay default timing
+- Supporting better pricing and provisioning decisions
+
+## Project Structure
+
+```
+.
+├── README.md
+├── requirements.txt
+├── run_pipeline.py
+├── src/
+│   ├── __init__.py
+│   ├── data_loader.py
+│   ├── kaplan_meier.py
+│   ├── cox_ph.py
+│   ├── chiizer.py
+│   └── predict_survival.py
+└── reports/
+    └── survival_results.json
+```
+
+## Usage
+
+```bash
+pip install -r requirements.txt
+python run_pipeline.py
+```
+
+## Key Outputs
+
+- Kaplan-Meier survival curves by credit score band
+- Median time-to-default per segment
+- Cox PH hazard ratios identifying default drivers
+- 12-month and 24-month survival probabilities
+- Predicted survival curve for new loan applicants

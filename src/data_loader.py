@@ -1,89 +1,83 @@
-"""Generate synthetic loan data for survival analysis."""
-
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
-
-def generate_loan_data(n_samples: int = 5000, seed: int = 42) -> pd.DataFrame:
-    """Generate loan data with survival outcomes.
-    
-    Args:
-        n_samples: Number of loan records to generate.
-        seed: Random seed for reproducibility.
-    
-    Returns:
-        DataFrame with columns: time_start, time_end, event_default, income,
-        credit_score, employment_years, debt_to_income, loan_amount,
-        interest_rate, LTV_ratio.
-    """
+def generate_loan_data(n=5000, seed=42):
+    """Generate synthetic loan data with survival outcomes."""
     np.random.seed(seed)
-    
-    # Credit score distribution (realistic US range)
-    credit_score = np.random.normal(680, 100, n_samples).clip(300, 850).astype(int)
-    
-    # Income (annual, in $)
-    income = np.random.lognormal(10.8, 0.45, n_samples).clip(15000, 500000)
-    
-    # Employment years
-    employment_years = np.random.exponential(5, n_samples).clip(0, 40)
-    
-    # Debt-to-income ratio
-    debt_to_income = np.random.lognormal(2.8, 0.6, n_samples).clip(0.1, 0.8)
-    
-    # Loan amount (correlated with income)
-    loan_amount = income * (0.5 + np.random.uniform(0.1, 0.8, n_samples))
+
+    # Credit score bands: <580 (Deep Subprime), 580-669 (Subprime),
+    # 670-739 (Near Prime), 740+ (Prime)
+    credit_scores = np.random.normal(680, 100, n).clip(300, 850).astype(int)
+
+    # Income: skewed distribution, correlated with credit score
+    base_income = 40000 + (credit_scores - 500) * 150
+    income = np.random.lognormal(np.log(base_income), 0.35).clip(15000, 500000)
+
+    # Employment years: older borrowers have more tenure
+    age = (credit_scores - 300) / 15 + np.random.normal(30, 10, n)
+    employment_years = np.clip((age - 18) * 0.7 + np.random.exponential(2, n), 0, 50)
+
+    # Loan amount: correlated with income and credit score
+    loan_amount = income * (0.3 + (850 - credit_scores) / 2000) + np.random.normal(0, 10000, n)
     loan_amount = loan_amount.clip(5000, 500000)
-    
-    # Interest rate (higher for lower credit scores)
-    base_rate = 0.04
-    credit_adjustment = (700 - credit_score) / 700 * 0.08
-    interest_rate = base_rate + credit_adjustment.clip(0, 0.15) + np.random.uniform(0, 0.02, n_samples)
-    
-    # LTV ratio
-    LTV_ratio = np.random.beta(2, 8, n_samples).clip(0.2, 0.95)
-    
-    # Base hazard varies by credit score and DTI
-    base_hazard = np.exp(-7 + (700 - credit_score) / 100 * 2 + (debt_to_income - 0.3) * 3)
-    
-    # Time to default (exponential with credit-dependent hazard)
-    time_to_default = np.random.exponential(1 / base_hazard.clip(0.01, None))
-    time_to_default = time_to_default.clip(1, 120)
-    
-    # Censoring at 24 months (~35% censored)
-    time_end = np.where(time_to_default > 24, 24, time_to_default)
-    event_default = np.where(time_to_default <= 24, 1, 0)
-    
-    # Mark censored
-    censored_mask = time_to_default > 24
-    event_default[censored_mask] = 0
-    
-    # Recalculate for censored
-    time_end = np.where(censored_mask, 24, time_to_default)
-    
+
+    # Interest rate: inverse relation with credit score
+    base_rate = 12 - (credit_scores - 400) / 60
+    interest_rate = base_rate + np.random.normal(0, 1.5, n)
+    interest_rate = interest_rate.clip(3, 25)
+
+    # LTV ratio: loan-to-value
+    ltv_ratio = np.random.beta(2, 8, n) * 0.95 + 0.3
+    ltv_ratio = ltv_ratio.clip(0.2, 1.0)
+
+    # Debt-to-income ratio
+    debt_to_income = np.random.lognormal(-1.5, 0.6, n) + 0.1
+    debt_to_income = debt_to_income.clip(0.05, 0.8)
+
+    # Time to default/hazard rate depends on credit score and other factors
+    # Lower credit score = higher hazard = shorter time to default
+    hazard_base = np.exp(-7 + (850 - credit_scores) / 150)
+    hazard_base *= (1 + debt_to_income * 0.5)
+    hazard_base *= (1 + ltv_ratio * 0.3)
+    hazard_base *= (1 + interest_rate / 20)
+
+    # Time to default (in months) for those who default
+    time_to_default = np.random.exponential(1 / hazard_base)
+
+    # Censor at 24 months for ~35% of observations
+    censor_time = np.full(n, 24.0)
+    event_default = (time_to_default <= 24).astype(int)
+    time_end = np.where(time_to_default <= 24, time_to_default, 24.0)
+
     df = pd.DataFrame({
-        'time_start': np.zeros(n_samples, dtype=float),
+        'time_start': np.zeros(n),
         'time_end': time_end,
         'event_default': event_default,
-        'income': income,
-        'credit_score': credit_score,
-        'employment_years': employment_years,
-        'debt_to_income': debt_to_income,
-        'loan_amount': loan_amount,
-        'interest_rate': interest_rate,
-        'LTV_ratio': LTV_ratio
+        'income': income.round(2),
+        'credit_score': credit_scores,
+        'employment_years': employment_years.round(1),
+        'debt_to_income': debt_to_income.round(4),
+        'loan_amount': loan_amount.round(2),
+        'interest_rate': interest_rate.round(3),
+        'ltv_ratio': ltv_ratio.round(4)
     })
-    
+
     return df
 
-
-def load_data() -> pd.DataFrame:
-    """Load or generate loan data."""
-    return generate_loan_data()
-
+def get_credit_score_band(score):
+    """Assign credit score to band."""
+    if score < 580:
+        return 'Deep Subprime (<580)'
+    elif score < 670:
+        return 'Subprime (580-669)'
+    elif score < 740:
+        return 'Near Prime (670-739)'
+    else:
+        return 'Prime (740+)'
 
 if __name__ == "__main__":
     df = generate_loan_data()
-    print(f"Generated {len(df)} loan records")
-    print(f"Censored: {df['event_default'].eq(0).sum()} ({df['event_default'].eq(0).mean()*100:.1f}%)")
-    print(f"Defaults: {df['event_default'].eq(1).sum()} ({df['event_default'].eq(1).mean()*100:.1f}%)")
+    print(f"Generated {len(df)} loans")
+    print(f"Default rate: {df['event_default'].mean():.2%}")
     print(df.head())
