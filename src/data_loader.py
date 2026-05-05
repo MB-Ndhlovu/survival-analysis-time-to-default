@@ -1,68 +1,83 @@
+"""Generate synthetic loan data with survival times and covariates."""
+
 import numpy as np
 import pandas as pd
 
+np.random.seed(42)
 
-def generate_loan_data(n_samples: int = 5000, seed: int = 42) -> pd.DataFrame:
-    """Generate synthetic loan data with survival characteristics."""
-    np.random.seed(seed)
+def generate_loan_data(n=5000, censor_at=24, default_rate=0.65):
+    """
+    Generate n loan records with survival data.
+    - ~35% are right-censored at censor_at months
+    - ~65% experience default (event=1)
+    """
+    # Credit score distribution
+    credit_score = np.random.normal(680, 80, n).clip(500, 850).astype(int)
 
-    data = {}
+    # Income in ZAR
+    income = np.random.lognormal(10.5, 0.5, n)
 
-    data["income"] = np.random.lognormal(mean=10.5, sigma=0.5, size=n_samples)
-    data["credit_score"] = np.random.normal(loc=680, scale=80, size=n_samples)
-    data["credit_score"] = np.clip(data["credit_score"], 300, 850).astype(int)
-    data["employment_years"] = np.random.exponential(scale=5, size=n_samples)
-    data["employment_years"] = np.clip(data["employment_years"], 0, 40)
-    data["debt_to_income"] = np.random.beta(a=2, b=5, size=n_samples) * 0.6
-    data["loan_amount"] = np.random.lognormal(mean=9.5, sigma=0.7, size=n_samples)
-    data["loan_amount"] = np.clip(data["loan_amount"], 1000, 500000)
-    data["interest_rate"] = np.random.normal(loc=8.5, scale=3, size=n_samples)
-    data["interest_rate"] = np.clip(data["interest_rate"], 2, 25)
-    data["LTV_ratio"] = np.random.beta(a=5, b=5, size=n_samples) * 1.2
+    # Employment years
+    employment_years = np.random.exponential(4, n).clip(0, 30)
 
-    df = pd.DataFrame(data)
+    # Debt-to-income ratio
+    debt_to_income = np.random.beta(2, 8, n) * 0.6
 
-    default_prob = (
-        0.4 * (df["credit_score"] < 580).astype(float)
-        + 0.25 * ((df["credit_score"] >= 580) & (df["credit_score"] < 670)).astype(float)
-        + 0.12 * ((df["credit_score"] >= 670) & (df["credit_score"] < 740)).astype(float)
-        + 0.05 * (df["credit_score"] >= 740).astype(float)
-        + 0.3 * df["debt_to_income"]
-        + 0.2 * (df["LTV_ratio"] > 0.8).astype(float)
-        + 0.1 * (df["interest_rate"] > 15).astype(float)
-    )
-    default_prob = np.clip(default_prob, 0.01, 0.85)
+    # Loan amount (R50k - R2M)
+    loan_amount = np.random.lognormal(12, 0.8, n).clip(50_000, 2_000_000)
 
-    time_to_default = np.random.exponential(
-        scale=30 / (default_prob * 10 + 0.5), size=n_samples
-    )
-    time_to_default = np.clip(time_to_default, 1, 120)
+    # Interest rate (prime-linked)
+    base_rate = 0.07 + (850 - credit_score) / 3500
+    interest_rate = base_rate + np.random.normal(0, 0.01, n).clip(-0.02, 0.02)
 
-    censor_time = 24.0
-    time_end = np.minimum(time_to_default, censor_time)
-    event_default = (time_to_default <= censor_time).astype(int)
+    # LTV ratio
+    LTV_ratio = np.random.beta(3, 7, n) * 1.2
 
-    df["time_start"] = 0.0
-    df["time_end"] = np.round(time_end, 2)
-    df["event_default"] = event_default
+    # Assign event (default) status first to match desired rate
+    events = np.random.binomial(1, default_rate, n)
+
+    # Time to default: generate all times, then override censored to censor_at
+    # Base hazard varies by credit score
+    base_hazard = 0.05 + np.exp(-(credit_score - 500) / 200) * 0.3
+    base_hazard *= (1 + debt_to_income * 1.5)
+    base_hazard *= (1 + LTV_ratio * 0.3)
+    base_hazard = base_hazard.clip(0.01, 2.0)
+
+    # Time to default (months)
+    time_to_default = np.random.exponential(1 / base_hazard, n).clip(0.5, censor_at - 0.1)
+
+    # For censored, time_end = censor_at
+    time_end = np.where(events == 1, time_to_default.round(1), censor_at)
+
+    df = pd.DataFrame({
+        "time_start": np.zeros(n, dtype=int),
+        "time_end": time_end,
+        "event_default": events,
+        "income": income.round(0).astype(int),
+        "credit_score": credit_score,
+        "employment_years": employment_years.round(1),
+        "debt_to_income": (debt_to_income * 100).round(2),
+        "loan_amount": loan_amount.round(0).astype(int),
+        "interest_rate": (interest_rate * 100).round(2),
+        "LTV_ratio": LTV_ratio.round(3),
+    })
 
     return df
 
-
-def get_credit_score_band(score: int) -> str:
+def get_credit_band(score):
     if score < 580:
-        return "< 580"
+        return "Very Poor (<580)"
     elif score < 670:
-        return "580-669"
+        return "Fair (580-669)"
     elif score < 740:
-        return "670-739"
+        return "Good (670-739)"
     else:
-        return "740+"
-
+        return "Excellent (740+)"
 
 if __name__ == "__main__":
     df = generate_loan_data()
+    df.to_csv("/home/workspace/Projects/survival-analysis-time-to-default/loan_data.csv", index=False)
+    print(f"Generated {len(df)} records")
+    print(f"Defaulted: {df['event_default'].sum()} ({df['event_default'].mean()*100:.1f}%)")
+    print(f"Censored: {(df['event_default']==0).sum()} ({(1-df['event_default'].mean())*100:.1f}%)")
     print(df.head())
-    print(f"\nShape: {df.shape}")
-    print(f"Default rate: {df['event_default'].mean():.2%}")
-    print(f"Censored rate: {(df['event_default'] == 0).mean():.2%}")

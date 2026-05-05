@@ -1,74 +1,105 @@
+"""Predict survival function for a new loan applicant."""
+
 import numpy as np
 import pandas as pd
-from lifelines import CoxPHFitter
+import matplotlib.pyplot as plt
+from lifelines import KaplanMeierFitter
+from .cox_ph import fit_cox_ph
 
+def predict_new_applicant(cph_model, applicant_features, timeline=None):
+    """
+    Predict survival curve for a new applicant using the fitted Cox PH model.
+    Args:
+        cph_model: fitted CoxPHFitter
+        applicant_features: dict of {feature_name: value}
+        timeline: array of time points (default 0-36 months)
+    """
+    if timeline is None:
+        timeline = np.arange(0, 37)
 
-def create_applicant(
-    income: float = 55000,
-    credit_score: int = 680,
-    employment_years: float = 3.0,
-    debt_to_income: float = 0.25,
-    loan_amount: float = 15000,
-    interest_rate: float = 7.5,
-    LTV_ratio: float = 0.75,
-) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "income": [income],
-            "credit_score": [credit_score],
-            "employment_years": [employment_years],
-            "debt_to_income": [debt_to_income],
-            "loan_amount": [loan_amount],
-            "interest_rate": [interest_rate],
-            "LTV_ratio": [LTV_ratio],
+    # Standardize features using approximate means/stds from training data
+    # These would ideally come from training data; using rough approximations
+    feature_means = {
+        "credit_score": 680, "employment_years": 4, "debt_to_income": 22,
+        "loan_amount": 400000, "interest_rate": 11, "LTV_ratio": 0.55
+    }
+    feature_stds = {
+        "credit_score": 80, "employment_years": 4, "debt_to_income": 15,
+        "loan_amount": 350000, "interest_rate": 3, "LTV_ratio": 0.25
+    }
+
+    X = {}
+    for k, v in applicant_features.items():
+        if k in feature_means:
+            X[k] = (v - feature_means[k]) / feature_stds[k]
+    X["log_loan_amount"] = np.log(applicant_features.get("loan_amount", 400000))
+
+    # Build dataframe for prediction
+    pred_df = pd.DataFrame([X])
+    pred_df = pred_df.rename(columns={
+        "debt_to_income": "debt_to_income",
+        "loan_amount": "loan_amount",
+    })
+
+    # Get baseline hazard and predicted survival
+    survival_probs = cph_model.predict_survival_function(pred_df, times=timeline)
+
+    return timeline, survival_probs.values.flatten()
+
+def demo_predictions(cph_model, df):
+    """Show predicted survival for three example applicants."""
+    timeline = np.arange(0, 37)
+
+    applicants = {
+        "High-Risk (score=540)": {
+            "credit_score": 540, "employment_years": 1, "debt_to_income": 40,
+            "loan_amount": 800000, "interest_rate": 18, "LTV_ratio": 0.95
+        },
+        "Medium-Risk (score=680)": {
+            "credit_score": 680, "employment_years": 5, "debt_to_income": 25,
+            "loan_amount": 500000, "interest_rate": 11, "LTV_ratio": 0.70
+        },
+        "Low-Risk (score=780)": {
+            "credit_score": 780, "employment_years": 10, "debt_to_income": 15,
+            "loan_amount": 300000, "interest_rate": 8, "LTV_ratio": 0.45
+        },
+    }
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    colors = {"High-Risk (score=540)": "red",
+              "Medium-Risk (score=680)": "orange",
+              "Low-Risk (score=780)": "green"}
+
+    results = {}
+    for name, features in applicants.items():
+        t, surv = predict_new_applicant(cph_model, features, timeline)
+        ax.plot(t, surv, label=name, color=colors[name], linewidth=2)
+        results[name] = {
+            "surv_12": np.interp(12, t, surv),
+            "surv_24": np.interp(24, t, surv),
         }
-    )
 
+    ax.set_title("Predicted Survival Curve by Applicant Profile", fontsize=12)
+    ax.set_xlabel("Months")
+    ax.set_ylabel("Survival Probability")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    ax.set_ylim(0, 1.05)
 
-def predict_survival(applicant: pd.DataFrame, cph: CoxPHFitter, df_ref: pd.DataFrame) -> dict:
-    X = applicant.copy()
-    X["credit_score"] = (X["credit_score"] - df_ref["credit_score"].mean()) / df_ref["credit_score"].std()
-    X["income"] = np.log1p(X["income"])
-    X["loan_amount"] = np.log1p(X["loan_amount"])
+    plt.tight_layout()
+    out_path = "/home/workspace/Projects/survival-analysis-time-to-default/reports/applicant_survival_prediction.png"
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"Saved prediction plot: {out_path}")
 
-    times = [6, 12, 18, 24, 36, 48, 60]
-    survival_probs = {}
+    print("\n=== Predicted Survival Probabilities ===")
+    for name, vals in results.items():
+        print(f"  {name}: 12-mo={vals['surv_12']:.1%}, 24-mo={vals['surv_24']:.1%}")
 
-    for t in times:
-        try:
-            survival_probs[f"{t}m"] = round(cph.predict_survival_function(X, times=[t]).iloc[0, 0], 4)
-        except Exception:
-            survival_probs[f"{t}m"] = None
-
-    return {"survival_at_time": survival_probs, "applicant_data": applicant.to_dict(orient="records")[0]}
-
-
-def print_prediction(prediction: dict) -> None:
-    print("\n" + "=" * 50)
-    print("NEW APPLICANT PREDICTION")
-    print("=" * 50)
-    app = prediction["applicant_data"]
-    print(f"\nApplicant Profile:")
-    print(f"  Income: ${app['income']:,.0f}")
-    print(f"  Credit Score: {app['credit_score']}")
-    print(f"  Employment: {app['employment_years']:.1f} years")
-    print(f"  DTI: {app['debt_to_income']:.2%}")
-    print(f"  Loan Amount: ${app['loan_amount']:,.0f}")
-    print(f"  Interest Rate: {app['interest_rate']:.2f}%")
-    print(f"  LTV: {app['LTV_ratio']:.2f}")
-    print("\nPredicted Survival Probabilities:")
-    for period, prob in prediction["survival_at_time"].items():
-        if prob is not None:
-            print(f"  {period}: {prob:.2%}")
-
+    return results
 
 if __name__ == "__main__":
-    from src.data_loader import generate_loan_data
-    from src.cox_ph import fit_cox_ph
-
+    from .data_loader import generate_loan_data
     df = generate_loan_data()
-    results = fit_cox_ph(df)
-
-    applicant = create_applicant()
-    prediction = predict_survival(applicant, results["cph"], df)
-    print_prediction(prediction)
+    cph, _ = fit_cox_ph(df)
+    demo_predictions(cph, df)

@@ -1,70 +1,74 @@
-import numpy as np
+"""Cox Proportional Hazards model for default risk."""
+
 import pandas as pd
+import numpy as np
 from lifelines import CoxPHFitter
+import matplotlib.pyplot as plt
 
+def fit_cox_ph(df):
+    """
+    Fit Cox PH model on loan covariates.
+    Returns fitted model and hazard ratio summary.
+    """
+    # Prepare features
+    X = df[[
+        "credit_score", "employment_years", "debt_to_income",
+        "loan_amount", "interest_rate", "LTV_ratio"
+    ]].copy()
 
-def fit_cox_ph(df: pd.DataFrame) -> dict:
-    features = [
-        "income",
-        "credit_score",
-        "employment_years",
-        "debt_to_income",
-        "loan_amount",
-        "interest_rate",
-        "LTV_ratio",
-    ]
-    X = df[features].copy()
-    X["credit_score"] = (X["credit_score"] - X["credit_score"].mean()) / X["credit_score"].std()
-    X["income"] = np.log1p(X["income"])
-    X["loan_amount"] = np.log1p(X["loan_amount"])
+    # Standardize
+    for col in X.columns:
+        X[col] = (X[col] - X[col].mean()) / X[col].std()
+
+    # Log loan amount
+    X["log_loan_amount"] = np.log(df["loan_amount"])
+
+    # Duration and event
+    X["duration"] = df["time_end"]
+    X["event_default"] = df["event_default"]
 
     cph = CoxPHFitter()
-    cph.fit(
-        df[["time_end", "event_default"] + features],
-        duration_col="time_end",
-        event_col="event_default",
-    )
+    cph.fit(X, duration_col="duration", event_col="event_default")
 
-    summary = cph.summary
-    summary = summary.reset_index()
-    summary.columns = ["covariate"] + list(summary.columns[1:])
+    # Print summary
+    print("\n=== Cox PH Model Summary ===")
+    cph.print_summary()
 
-    hazard_ratios = {}
-    for _, row in summary.iterrows():
-        hazard_ratios[row["covariate"]] = {
-            "hazard_ratio": round(float(row["exp(coef)"]), 4),
-            "coefficient": round(float(row["coef"]), 4),
-            "p_value": round(float(row["p"]), 4),
-            "significant": float(row["p"]) < 0.05,
-        }
+    # Hazard ratios
+    hr_summary = cph.hazard_ratios_.rename("hazard_ratio").to_frame()
+    hr_summary["coef"] = cph.params_.values
+    hr_summary["se"] = cph.standard_errors_.values
+    hr_summary["p"] = cph.summary["p"].values
 
-    return {"cph": cph, "hazard_ratios": hazard_ratios, "concordance_index": round(cph.concordance_index_, 4)}
+    # Plot forest
+    fig, ax = plt.subplots(figsize=(8, 5))
+    hazards = hr_summary["hazard_ratio"].sort_values()
+    colors = ["red" if h > 1 else "steelblue" for h in hazards]
+    ax.barh(list(hazards.index), hazards.values, color=colors, alpha=0.7)
+    ax.axvline(1.0, color="black", linestyle="--", linewidth=1)
+    ax.set_xlabel("Hazard Ratio")
+    ax.set_title("Cox PH Hazard Ratios (per 1-SD increase)")
+    ax.grid(alpha=0.3, axis="x")
+    for i, (name, row) in enumerate(hazards.items()):
+        ax.text(row + 0.02, i, f"{row:.2f}", va="center", fontsize=8)
+    plt.tight_layout()
+    out_path = "/home/workspace/Projects/survival-analysis-time-to-default/reports/cox_hazard_ratios.png"
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"Saved hazard ratio plot: {out_path}")
 
+    # Interpretation
+    print("\n=== Top Risk Factors (by hazard ratio) ===")
+    sorted_hr = hr_summary.sort_values("hazard_ratio", ascending=False)
+    for name, row in sorted_hr.iterrows():
+        direction = "increases" if row["hazard_ratio"] > 1 else "decreases"
+        change = abs(row["hazard_ratio"] - 1) * 100
+        print(f"  {name}: HR={row['hazard_ratio']:.3f} → {change:.1f}% {direction} default risk")
 
-def print_cox_results(results: dict) -> None:
-    print("\n" + "=" * 60)
-    print("COX PROPORTIONAL HAZARDS MODEL RESULTS")
-    print("=" * 60)
-    print(f"\nConcordance Index: {results['concordance_index']}")
-    print("\nHazard Ratios (sorted by impact):")
-
-    sorted_hr = sorted(results["hazard_ratios"].items(), key=lambda x: x[1]["hazard_ratio"], reverse=True)
-    for var, vals in sorted_hr:
-        sig = "***" if vals["p_value"] < 0.001 else ("**" if vals["p_value"] < 0.01 else ("*" if vals["p_value"] < 0.05 else ""))
-        print(f"  {var:<20} HR={vals['hazard_ratio']:>7.4f}  p={vals['p_value']:.4f} {sig}")
-
-    print("\nInterpretation:")
-    top_risk = [v for v, d in sorted_hr if d["hazard_ratio"] > 1 and d["significant"]][:3]
-    if top_risk:
-        print(f"  Top risk increasers: {', '.join(top_risk)}")
-    low_risk = [v for v, d in sorted_hr if d["hazard_ratio"] < 1 and d["significant"]][:3]
-    if low_risk:
-        print(f"  Risk reducers: {', '.join(low_risk)}")
-
+    return cph, hr_summary
 
 if __name__ == "__main__":
-    from src.data_loader import generate_loan_data
-
+    from .data_loader import generate_loan_data
     df = generate_loan_data()
-    results = fit_cox_ph(df)
-    print_cox_results(results)
+    cph, hr = fit_cox_ph(df)
+    print(hr[["hazard_ratio"]].sort_values("hazard_ratio", ascending=False).to_string())
