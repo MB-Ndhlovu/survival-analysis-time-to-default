@@ -1,1 +1,1 @@
-"""Survival analysis for credit risk time-to-default modeling."""
+"""Survival Analysis Time-to-Default Package."""

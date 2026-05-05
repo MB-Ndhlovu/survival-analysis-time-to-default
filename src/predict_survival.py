@@ -1,105 +1,195 @@
-"""Predict survival function for a new loan applicant."""
+"""Predict survival function for new loan applicants."""
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from lifelines import KaplanMeierFitter
-from .cox_ph import fit_cox_ph
+from lifelines import CoxPHFitter, KaplanMeierFitter
+from src.cox_ph import prepare_covariates
 
-def predict_new_applicant(cph_model, applicant_features, timeline=None):
-    """
-    Predict survival curve for a new applicant using the fitted Cox PH model.
+
+def build_survival_predictor(df: pd.DataFrame):
+    """Build Cox PH model for survival prediction."""
+    X = prepare_covariates(df)
+    
+    covariates = [
+        'credit_score', 'employment_years', 'debt_to_income',
+        'loan_amount', 'LTV_ratio'
+    ]
+    
+    cph = CoxPHFitter(penalizer=0.1)
+    cph.fit(
+        X[['time_end', 'event_default'] + covariates],
+        duration_col='time_end',
+        event_col='event_default'
+    )
+    
+    return cph
+
+
+def create_baseline_km(df: pd.DataFrame) -> KaplanMeierFitter:
+    """Create baseline Kaplan-Meier for median applicant."""
+    kmf = KaplanMeierFitter()
+    kmf.fit(df['time_end'], df['event_default'])
+    return kmf
+
+
+def predict_survival(cph: CoxPHFitter, kmf_baseline: KaplanMeierFitter, 
+                     applicant: dict, times: np.ndarray = None) -> dict:
+    """Predict survival curve for a new applicant.
+    
     Args:
-        cph_model: fitted CoxPHFitter
-        applicant_features: dict of {feature_name: value}
-        timeline: array of time points (default 0-36 months)
+        cph: Fitted Cox PH model.
+        kmf_baseline: Baseline Kaplan-Meier fitter.
+        applicant: Dictionary with applicant features.
+        times: Time points to predict at. Defaults to range(0, 61).
+    
+    Returns:
+        Dictionary with predicted survival probabilities.
     """
-    if timeline is None:
-        timeline = np.arange(0, 37)
-
-    # Standardize features using approximate means/stds from training data
-    # These would ideally come from training data; using rough approximations
-    feature_means = {
-        "credit_score": 680, "employment_years": 4, "debt_to_income": 22,
-        "loan_amount": 400000, "interest_rate": 11, "LTV_ratio": 0.55
-    }
-    feature_stds = {
-        "credit_score": 80, "employment_years": 4, "debt_to_income": 15,
-        "loan_amount": 350000, "interest_rate": 3, "LTV_ratio": 0.25
-    }
-
-    X = {}
-    for k, v in applicant_features.items():
-        if k in feature_means:
-            X[k] = (v - feature_means[k]) / feature_stds[k]
-    X["log_loan_amount"] = np.log(applicant_features.get("loan_amount", 400000))
-
-    # Build dataframe for prediction
-    pred_df = pd.DataFrame([X])
-    pred_df = pred_df.rename(columns={
-        "debt_to_income": "debt_to_income",
-        "loan_amount": "loan_amount",
-    })
-
-    # Get baseline hazard and predicted survival
-    survival_probs = cph_model.predict_survival_function(pred_df, times=timeline)
-
-    return timeline, survival_probs.values.flatten()
-
-def demo_predictions(cph_model, df):
-    """Show predicted survival for three example applicants."""
-    timeline = np.arange(0, 37)
-
-    applicants = {
-        "High-Risk (score=540)": {
-            "credit_score": 540, "employment_years": 1, "debt_to_income": 40,
-            "loan_amount": 800000, "interest_rate": 18, "LTV_ratio": 0.95
-        },
-        "Medium-Risk (score=680)": {
-            "credit_score": 680, "employment_years": 5, "debt_to_income": 25,
-            "loan_amount": 500000, "interest_rate": 11, "LTV_ratio": 0.70
-        },
-        "Low-Risk (score=780)": {
-            "credit_score": 780, "employment_years": 10, "debt_to_income": 15,
-            "loan_amount": 300000, "interest_rate": 8, "LTV_ratio": 0.45
-        },
+    if times is None:
+        times = np.arange(0, 61)
+    
+    log_income = np.log1p(applicant['income'])
+    log_loan_amount = np.log1p(applicant['loan_amount'])
+    high_dti = 1 if applicant['debt_to_income'] > 0.36 else 0
+    high_ltv = 1 if applicant['LTV_ratio'] > 0.8 else 0
+    short_employment = 1 if applicant['employment_years'] < 2 else 0
+    
+    X_new = pd.DataFrame([{
+        'credit_score': applicant['credit_score'],
+        'employment_years': applicant['employment_years'],
+        'debt_to_income': applicant['debt_to_income'],
+        'loan_amount': applicant['loan_amount'],
+        'LTV_ratio': applicant['LTV_ratio']
+    }])
+    
+    partial_hazard = cph.predict_partial_hazard(X_new).values
+    if isinstance(partial_hazard, np.ndarray) and partial_hazard.ndim > 0:
+        partial_hazard = partial_hazard[0]
+    linear_predictor = np.log(float(partial_hazard)) if float(partial_hazard) > 0 else 0
+    
+    baseline_hazard = cph.baseline_hazard_
+    baseline_cumulative_hazard = cph.baseline_cumulative_hazard_
+    
+    survival_probs = []
+    for t in times:
+        try:
+            base_surv = kmf_baseline.predict(t)
+        except:
+            base_surv = np.exp(-cph.predict_partial_hazard(X_new).values[0] * t * 0.05)
+        
+        hr_adjustment = np.exp(linear_predictor)
+        survival_prob = np.exp(-base_surv ** hr_adjustment) if base_surv > 0 else 1.0
+        survival_probs.append(float(survival_prob))
+    
+    return {
+        'times': times.tolist(),
+        'survival_probability': survival_probs,
+        'survival_12m': survival_probs[min(12, len(survival_probs)-1)],
+        'survival_24m': survival_probs[min(24, len(survival_probs)-1)],
+        'median_time_to_default': find_median_time(times, survival_probs)
     }
 
-    fig, ax = plt.subplots(figsize=(9, 5))
-    colors = {"High-Risk (score=540)": "red",
-              "Medium-Risk (score=680)": "orange",
-              "Low-Risk (score=780)": "green"}
 
-    results = {}
-    for name, features in applicants.items():
-        t, surv = predict_new_applicant(cph_model, features, timeline)
-        ax.plot(t, surv, label=name, color=colors[name], linewidth=2)
-        results[name] = {
-            "surv_12": np.interp(12, t, surv),
-            "surv_24": np.interp(24, t, surv),
+def find_median_time(times: np.ndarray, survival_probs: list) -> float:
+    """Find median survival time."""
+    for i, prob in enumerate(survival_probs):
+        if prob <= 0.5:
+            return float(times[i])
+    return float('inf')
+
+
+def risk_profile(applicant: dict) -> str:
+    """Classify applicant risk profile."""
+    score = applicant['credit_score']
+    dti = applicant['debt_to_income']
+    ltv = applicant['LTV_ratio']
+    
+    risk_score = 0
+    if score < 580: risk_score += 3
+    elif score < 670: risk_score += 2
+    elif score < 740: risk_score += 1
+    
+    if dti > 0.43: risk_score += 2
+    elif dti > 0.36: risk_score += 1
+    
+    if ltv > 0.9: risk_score += 2
+    elif ltv > 0.8: risk_score += 1
+    
+    if risk_score <= 2: return "Prime"
+    elif risk_score <= 4: return "Low"
+    elif risk_score <= 6: return "Medium"
+    else: return "High"
+
+
+def run_prediction_demo(df: pd.DataFrame, output_dir: str = 'reports') -> dict:
+    """Run prediction for sample applicants."""
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+    
+    cph = build_survival_predictor(df)
+    kmf_baseline = create_baseline_km(df)
+    
+    sample_applicants = [
+        {
+            'name': 'Prime Borrower',
+            'income': 95000,
+            'credit_score': 760,
+            'employment_years': 8,
+            'debt_to_income': 0.28,
+            'loan_amount': 220000,
+            'interest_rate': 0.065,
+            'LTV_ratio': 0.70
+        },
+        {
+            'name': 'Near-Prime Borrower',
+            'income': 65000,
+            'credit_score': 660,
+            'employment_years': 3,
+            'debt_to_income': 0.35,
+            'loan_amount': 180000,
+            'interest_rate': 0.085,
+            'LTV_ratio': 0.82
+        },
+        {
+            'name': 'Subprime Borrower',
+            'income': 42000,
+            'credit_score': 580,
+            'employment_years': 1,
+            'debt_to_income': 0.44,
+            'loan_amount': 140000,
+            'interest_rate': 0.115,
+            'LTV_ratio': 0.92
         }
+    ]
+    
+    predictions = []
+    for applicant in sample_applicants:
+        pred = predict_survival(cph, kmf_baseline, applicant)
+        profile = risk_profile(applicant)
+        
+        predictions.append({
+            'name': applicant['name'],
+            'profile': profile,
+            'survival_12m': round(pred['survival_12m'], 3),
+            'survival_24m': round(pred['survival_24m'], 3),
+            'median_months': pred['median_time_to_default'] if pred['median_time_to_default'] != float('inf') else 'N/A'
+        })
+    
+    return {
+        'predictions': predictions,
+        'cph_model': cph
+    }
 
-    ax.set_title("Predicted Survival Curve by Applicant Profile", fontsize=12)
-    ax.set_xlabel("Months")
-    ax.set_ylabel("Survival Probability")
-    ax.legend()
-    ax.grid(alpha=0.3)
-    ax.set_ylim(0, 1.05)
-
-    plt.tight_layout()
-    out_path = "/home/workspace/Projects/survival-analysis-time-to-default/reports/applicant_survival_prediction.png"
-    plt.savefig(out_path, dpi=150)
-    plt.close()
-    print(f"Saved prediction plot: {out_path}")
-
-    print("\n=== Predicted Survival Probabilities ===")
-    for name, vals in results.items():
-        print(f"  {name}: 12-mo={vals['surv_12']:.1%}, 24-mo={vals['surv_24']:.1%}")
-
-    return results
 
 if __name__ == "__main__":
-    from .data_loader import generate_loan_data
-    df = generate_loan_data()
-    cph, _ = fit_cox_ph(df)
-    demo_predictions(cph, df)
+    from src.data_loader import load_data
+    
+    df = load_data()
+    result = run_prediction_demo(df)
+    
+    print("=== Survival Predictions for Sample Applicants ===")
+    for pred in result['predictions']:
+        print(f"\n{pred['name']} ({pred['profile']} risk):")
+        print(f"  12-month survival: {pred['survival_12m']:.1%}")
+        print(f"  24-month survival: {pred['survival_24m']:.1%}")
+        print(f"  Median time to default: {pred['median_months']}")

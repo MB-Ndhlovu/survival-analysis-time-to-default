@@ -1,74 +1,118 @@
-"""Cox Proportional Hazards model for default risk."""
+"""Cox Proportional Hazards model for default prediction."""
 
 import pandas as pd
 import numpy as np
 from lifelines import CoxPHFitter
-import matplotlib.pyplot as plt
 
-def fit_cox_ph(df):
+
+def prepare_covariates(df: pd.DataFrame) -> pd.DataFrame:
+    """Prepare covariates for Cox PH model."""
+    X = df.copy()
+    
+    X['log_income'] = np.log1p(X['income'])
+    X['log_loan_amount'] = np.log1p(X['loan_amount'])
+    X['high_dti'] = (X['debt_to_income'] > 0.36).astype(int)
+    X['high_ltv'] = (X['LTV_ratio'] > 0.8).astype(int)
+    X['short_employment'] = (X['employment_years'] < 2).astype(int)
+    
+    return X
+
+
+def fit_cox_ph(df: pd.DataFrame) -> tuple:
+    """Fit Cox PH model.
+    
+    Returns:
+        Tuple of (cph fitted model, summary DataFrame).
     """
-    Fit Cox PH model on loan covariates.
-    Returns fitted model and hazard ratio summary.
-    """
-    # Prepare features
-    X = df[[
-        "credit_score", "employment_years", "debt_to_income",
-        "loan_amount", "interest_rate", "LTV_ratio"
-    ]].copy()
+    X = prepare_covariates(df)
+    
+    covariates = [
+        'credit_score', 'employment_years', 'debt_to_income',
+        'loan_amount', 'LTV_ratio'
+    ]
+    
+    cph = CoxPHFitter(penalizer=0.1)
+    cph.fit(
+        X[['time_end', 'event_default'] + covariates],
+        duration_col='time_end',
+        event_col='event_default'
+    )
+    
+    return cph, cph.summary
 
-    # Standardize
-    for col in X.columns:
-        X[col] = (X[col] - X[col].mean()) / X[col].std()
 
-    # Log loan amount
-    X["log_loan_amount"] = np.log(df["loan_amount"])
+def get_hazard_ratios(cph) -> pd.DataFrame:
+    """Extract hazard ratios with confidence intervals."""
+    summary = cph.summary.copy()
+    summary['hazard_ratio'] = np.exp(summary['coef'])
+    
+    if 'coef lower 95%' in summary.columns:
+        summary['hr_lower'] = np.exp(summary['coef lower 95%'])
+        summary['hr_upper'] = np.exp(summary['coef upper 95%'])
+    elif '95% lower' in summary.columns:
+        summary['hr_lower'] = np.exp(summary['95% lower'])
+        summary['hr_upper'] = np.exp(summary['95% upper'])
+    else:
+        summary['hr_lower'] = None
+        summary['hr_upper'] = None
+    
+    return summary[['coef', 'hazard_ratio', 'hr_lower', 'hr_upper', 'p']]
 
-    # Duration and event
-    X["duration"] = df["time_end"]
-    X["event_default"] = df["event_default"]
 
-    cph = CoxPHFitter()
-    cph.fit(X, duration_col="duration", event_col="event_default")
+def interpret_coefficients(hr_df: pd.DataFrame) -> list:
+    """Interpret Cox PH coefficients."""
+    interpretations = []
+    
+    for _, row in hr_df.iterrows():
+        var = row.get('variable', row.name)
+        hr = row['hazard_ratio']
+        p = row['p']
+        
+        direction = "increases" if row['coef'] > 0 else "decreases"
+        
+        if p < 0.05:
+            sig = "significantly"
+        else:
+            sig = "non-significantly"
+        
+        interpretations.append({
+            'variable': str(var),
+            'hazard_ratio': round(hr, 3),
+            'direction': direction,
+            'significant': sig,
+            'p_value': round(p, 4)
+        })
+    
+    return interpretations
 
-    # Print summary
-    print("\n=== Cox PH Model Summary ===")
-    cph.print_summary()
 
-    # Hazard ratios
-    hr_summary = cph.hazard_ratios_.rename("hazard_ratio").to_frame()
-    hr_summary["coef"] = cph.params_.values
-    hr_summary["se"] = cph.standard_errors_.values
-    hr_summary["p"] = cph.summary["p"].values
+def run_cox_analysis(df: pd.DataFrame) -> dict:
+    """Run full Cox PH analysis."""
+    cph, summary = fit_cox_ph(df)
+    hr_df = get_hazard_ratios(cph)
+    interpretations = interpret_coefficients(hr_df)
+    
+    return {
+        'cph': cph,
+        'hazard_ratios': hr_df.reset_index().to_dict('records'),
+        'interpretations': interpretations,
+        'concordance_index': round(cph.concordance_index_, 4)
+    }
 
-    # Plot forest
-    fig, ax = plt.subplots(figsize=(8, 5))
-    hazards = hr_summary["hazard_ratio"].sort_values()
-    colors = ["red" if h > 1 else "steelblue" for h in hazards]
-    ax.barh(list(hazards.index), hazards.values, color=colors, alpha=0.7)
-    ax.axvline(1.0, color="black", linestyle="--", linewidth=1)
-    ax.set_xlabel("Hazard Ratio")
-    ax.set_title("Cox PH Hazard Ratios (per 1-SD increase)")
-    ax.grid(alpha=0.3, axis="x")
-    for i, (name, row) in enumerate(hazards.items()):
-        ax.text(row + 0.02, i, f"{row:.2f}", va="center", fontsize=8)
-    plt.tight_layout()
-    out_path = "/home/workspace/Projects/survival-analysis-time-to-default/reports/cox_hazard_ratios.png"
-    plt.savefig(out_path, dpi=150)
-    plt.close()
-    print(f"Saved hazard ratio plot: {out_path}")
-
-    # Interpretation
-    print("\n=== Top Risk Factors (by hazard ratio) ===")
-    sorted_hr = hr_summary.sort_values("hazard_ratio", ascending=False)
-    for name, row in sorted_hr.iterrows():
-        direction = "increases" if row["hazard_ratio"] > 1 else "decreases"
-        change = abs(row["hazard_ratio"] - 1) * 100
-        print(f"  {name}: HR={row['hazard_ratio']:.3f} → {change:.1f}% {direction} default risk")
-
-    return cph, hr_summary
 
 if __name__ == "__main__":
-    from .data_loader import generate_loan_data
-    df = generate_loan_data()
-    cph, hr = fit_cox_ph(df)
-    print(hr[["hazard_ratio"]].sort_values("hazard_ratio", ascending=False).to_string())
+    from src.data_loader import load_data
+    
+    df = load_data()
+    result = run_cox_analysis(df)
+    
+    print("=== Cox Proportional Hazards Model ===")
+    print(f"Concordance Index: {result['concordance_index']}")
+    print("\n=== Hazard Ratios ===")
+    for hr in result['hazard_ratios']:
+        sig = "*" if hr['p_value'] < 0.05 else ""
+        print(f"  {hr['variable']}: HR={hr['hazard_ratio']:.3f} {sig}")
+    
+    print("\n=== Key Risk Factors ===")
+    for interp in sorted(result['interpretations'], key=lambda x: x['hazard_ratio'], reverse=True)[:5]:
+        print(f"  {interp['variable']}: HR={interp['hazard_ratio']}, {interp['direction']} risk ({interp['significant']})")

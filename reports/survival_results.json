@@ -1,90 +1,256 @@
 {
-  "metadata": {
-    "n_records": 5000,
-    "default_rate": 0.6552,
-    "censoring_rate": 0.3448,
-    "observation_months": 24
+  "data_summary": {
+    "n_samples": 5000,
+    "n_defaults": 1816,
+    "default_rate": 36.32,
+    "censor_rate": 63.68
   },
-  "km_summary": [
+  "km_results": {
+    "survival_probabilities": [
+      {
+        "credit_band": "<580",
+        "n_obs": 790,
+        "n_events": 707,
+        "median_survival_months": 5.786016076328859,
+        "survival_12m": NaN,
+        "survival_24m": 0.10506329113924051
+      },
+      {
+        "credit_band": "580-669",
+        "n_obs": 1495,
+        "n_events": 546,
+        "median_survival_months": Infinity,
+        "survival_12m": NaN,
+        "survival_24m": 0.6347826086956525
+      },
+      {
+        "credit_band": "670-739",
+        "n_obs": 1373,
+        "n_events": 278,
+        "median_survival_months": Infinity,
+        "survival_12m": NaN,
+        "survival_24m": 0.7975236707938823
+      },
+      {
+        "credit_band": "740+",
+        "n_obs": 1342,
+        "n_events": 285,
+        "median_survival_months": Infinity,
+        "survival_12m": NaN,
+        "survival_24m": 0.7876304023845005
+      }
+    ],
+    "median_survival_by_band": {
+      "<580": 5.786016076328859,
+      "580-669": null,
+      "670-739": null,
+      "740+": null
+    }
+  },
+  "cox_ph": {
+    "concordance_index": 0.7273,
+    "hazard_ratios": [
+      {
+        "covariate": "credit_score",
+        "coef": -0.008111777699741777,
+        "hazard_ratio": 0.9919210339886683,
+        "hr_lower": 0.9914305862767611,
+        "hr_upper": 0.992411724318628,
+        "p": 9.71156811737817e-227
+      },
+      {
+        "covariate": "employment_years",
+        "coef": -9.864216686866616e-05,
+        "hazard_ratio": 0.9999013626981099,
+        "hr_lower": 0.9918251211603597,
+        "hr_upper": 1.008043367520117,
+        "p": 0.9809805635588109
+      },
+      {
+        "covariate": "debt_to_income",
+        "coef": 19.45378569332521,
+        "hazard_ratio": 280977651.8423707,
+        "hr_lower": 0.0,
+        "hr_upper": Infinity,
+        "p": 0.9999999999999615
+      },
+      {
+        "covariate": "loan_amount",
+        "coef": -1.499583506823132e-08,
+        "hazard_ratio": 0.9999999850041651,
+        "hr_lower": 0.999998499042525,
+        "hr_upper": 1.0000014709680132,
+        "p": 0.9842194344531661
+      },
+      {
+        "covariate": "LTV_ratio",
+        "coef": -0.05368725664358753,
+        "hazard_ratio": 0.9477284559370016,
+        "hr_lower": 0.5642820535287901,
+        "hr_upper": 1.591738068889173,
+        "p": 0.8391850968410661
+      }
+    ],
+    "interpretations": [
+      {
+        "variable": "credit_score",
+        "hazard_ratio": 0.992,
+        "direction": "decreases",
+        "significant": "significantly",
+        "p_value": 0.0
+      },
+      {
+        "variable": "employment_years",
+        "hazard_ratio": 1.0,
+        "direction": "decreases",
+        "significant": "non-significantly",
+        "p_value": 0.981
+      },
+      {
+        "variable": "debt_to_income",
+        "hazard_ratio": 280977651.842,
+        "direction": "increases",
+        "significant": "non-significantly",
+        "p_value": 1.0
+      },
+      {
+        "variable": "loan_amount",
+        "hazard_ratio": 1.0,
+        "direction": "decreases",
+        "significant": "non-significantly",
+        "p_value": 0.9842
+      },
+      {
+        "variable": "LTV_ratio",
+        "hazard_ratio": 0.948,
+        "direction": "decreases",
+        "significant": "non-significantly",
+        "p_value": 0.8392
+      }
+    ]
+  },
+  "chiizer_summary": [
     {
-      "credit_band": "Very Poor (<580)",
-      "n": 516,
-      "median_survival_months": 4.3,
-      "survival_prob_12m": 0.3721,
-      "survival_prob_24m": 0.3605
+      "variable": "credit_risk",
+      "category": "High",
+      "n": 790,
+      "defaults": 707,
+      "default_rate": 89.5,
+      "survival_24m": 10.5,
+      "median_months": 5.786016076328859
     },
     {
-      "credit_band": "Fair (580-669)",
-      "n": 1707,
-      "median_survival_months": 5.2,
-      "survival_prob_12m": 0.3585,
-      "survival_prob_24m": 0.3275
+      "variable": "credit_risk",
+      "category": "Medium",
+      "n": 1495,
+      "defaults": 546,
+      "default_rate": 36.5,
+      "survival_24m": 63.5,
+      "median_months": "N/A"
     },
     {
-      "credit_band": "Good (670-739)",
-      "n": 1661,
-      "median_survival_months": 7.3,
-      "survival_prob_12m": 0.4052,
-      "survival_prob_24m": 0.3486
+      "variable": "credit_risk",
+      "category": "Low",
+      "n": 1373,
+      "defaults": 278,
+      "default_rate": 20.2,
+      "survival_24m": 79.8,
+      "median_months": "N/A"
     },
     {
-      "credit_band": "Excellent (740+)",
-      "n": 1116,
-      "median_survival_months": 10.0,
-      "survival_prob_12m": 0.4597,
-      "survival_prob_24m": 0.3584
+      "variable": "credit_risk",
+      "category": "Prime",
+      "n": 1342,
+      "defaults": 285,
+      "default_rate": 21.2,
+      "survival_24m": 78.8,
+      "median_months": "N/A"
+    },
+    {
+      "variable": "dti_risk",
+      "category": "Very High",
+      "n": 5000,
+      "defaults": 1816,
+      "default_rate": 36.3,
+      "survival_24m": 63.7,
+      "median_months": "N/A"
+    },
+    {
+      "variable": "ltv_risk",
+      "category": "Low",
+      "n": 4988,
+      "defaults": 1813,
+      "default_rate": 36.3,
+      "survival_24m": 63.7,
+      "median_months": "N/A"
+    },
+    {
+      "variable": "ltv_risk",
+      "category": "Moderate",
+      "n": 12,
+      "defaults": 3,
+      "default_rate": 25.0,
+      "survival_24m": 75.0,
+      "median_months": "N/A"
+    },
+    {
+      "variable": "employment_status",
+      "category": "New",
+      "n": 893,
+      "defaults": 307,
+      "default_rate": 34.4,
+      "survival_24m": 65.6,
+      "median_months": "N/A"
+    },
+    {
+      "variable": "employment_status",
+      "category": "Developing",
+      "n": 1322,
+      "defaults": 483,
+      "default_rate": 36.5,
+      "survival_24m": 63.5,
+      "median_months": "N/A"
+    },
+    {
+      "variable": "employment_status",
+      "category": "Established",
+      "n": 1530,
+      "defaults": 573,
+      "default_rate": 37.5,
+      "survival_24m": 62.5,
+      "median_months": "N/A"
+    },
+    {
+      "variable": "employment_status",
+      "category": "Senior",
+      "n": 1255,
+      "defaults": 453,
+      "default_rate": 36.1,
+      "survival_24m": 63.9,
+      "median_months": "N/A"
     }
   ],
-  "hazard_ratios": {
-    "credit_score": {
-      "hazard_ratio": 0.9433,
-      "coefficient": -0.0584,
-      "p_value": 0.1844
+  "predictions": [
+    {
+      "name": "Prime Borrower",
+      "profile": "Prime",
+      "survival_12m": 0.368,
+      "survival_24m": 0.368,
+      "median_months": 0.0
     },
-    "employment_years": {
-      "hazard_ratio": 0.9972,
-      "coefficient": -0.0028,
-      "p_value": 0.8769
+    {
+      "name": "Near-Prime Borrower",
+      "profile": "Low",
+      "survival_12m": 0.368,
+      "survival_24m": 0.368,
+      "median_months": 0.0
     },
-    "debt_to_income": {
-      "hazard_ratio": 1.0296,
-      "coefficient": 0.0291,
-      "p_value": 0.0948
-    },
-    "loan_amount": {
-      "hazard_ratio": 0.9717,
-      "coefficient": -0.0287,
-      "p_value": 0.4323
-    },
-    "interest_rate": {
-      "hazard_ratio": 1.0291,
-      "coefficient": 0.0287,
-      "p_value": 0.5148
-    },
-    "LTV_ratio": {
-      "hazard_ratio": 0.9968,
-      "coefficient": -0.0032,
-      "p_value": 0.8537
-    },
-    "log_loan_amount": {
-      "hazard_ratio": 1.0451,
-      "coefficient": 0.0442,
-      "p_value": 0.3565
+    {
+      "name": "Subprime Borrower",
+      "profile": "Medium",
+      "survival_12m": 0.368,
+      "survival_24m": 0.368,
+      "median_months": 0.0
     }
-  },
-  "applicant_predictions": {
-    "High-Risk (score=540)": {
-      "survival_12m": 0.3121,
-      "survival_24m": 0.2601
-    },
-    "Medium-Risk (score=680)": {
-      "survival_12m": 0.3832,
-      "survival_24m": 0.3298
-    },
-    "Low-Risk (score=780)": {
-      "survival_12m": 0.4298,
-      "survival_24m": 0.3767
-    }
-  },
-  "key_insight": "Survival analysis reveals WHEN default is likely, not just IF. A credit score of 540 faces ~38% survival probability at 24 months vs ~88% for a score of 780. The Cox PH model shows debt-to-income ratio and LTV are the strongest time-to-default accelerators."
+  ]
 }

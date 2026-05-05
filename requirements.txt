@@ -1,6 +1,5 @@
-lifelines
-scikit-learn
-pandas
-numpy
-matplotlib
-seaborn
+lifelines>=0.27.8
+scikit-learn>=1.3.0
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
