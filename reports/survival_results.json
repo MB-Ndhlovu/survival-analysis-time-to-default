@@ -1,191 +1,139 @@
 {
-  "km_results": {
+  "n_records": 5000,
+  "n_defaults": 3255,
+  "n_censored": 1745,
+  "median_survival_months": {
+    "Deep Subprime (<580)": 75.0,
+    "Subprime (580-669)": 76.0,
+    "Near Prime (670-739)": 92.0,
+    "Prime (740+)": 99.0
+  },
+  "survival_probabilities": {
     "Deep Subprime (<580)": {
-      "n": "776",
-      "median_survival": null,
-      "survival_at_12m": 0.8054123711340201,
-      "survival_at_24m": 0.6804123711340204
+      "12mo": 0.9107790973680254,
+      "24mo": 0.8333559501231862
     },
     "Subprime (580-669)": {
-      "n": "1488",
-      "median_survival": null,
-      "survival_at_12m": 0.9119623655913982,
-      "survival_at_24m": 0.8360215053763442
+      "12mo": 0.9144922447121316,
+      "24mo": 0.8480161109970562
     },
     "Near Prime (670-739)": {
-      "n": "1378",
-      "median_survival": null,
-      "survival_at_12m": 0.9448476052249632,
-      "survival_at_24m": 0.8976777939042084
+      "12mo": 0.9330033165687432,
+      "24mo": 0.8642486374171561
     },
     "Prime (740+)": {
-      "n": "1358",
-      "median_survival": null,
-      "survival_at_12m": 0.970544918998527,
-      "survival_at_24m": 0.9447717231222383
+      "12mo": 0.9317339441395606,
+      "24mo": 0.8720104660715515
     }
   },
-  "cox_ph": {
-    "concordance_index": 0.689536742622561,
-    "coefficients": {
-      "log_income": {
-        "coefficient": 0.0064428503680128155,
-        "hazard_ratio": 1.0064636501744648,
-        "p_value": 0.9606470226846868,
-        "significant": false
-      },
-      "credit_score": {
-        "coefficient": -0.006636684499164336,
-        "hazard_ratio": 0.9933852896526955,
-        "p_value": 5.416200311101594e-21,
-        "significant": true
-      },
-      "employment_years": {
-        "coefficient": -0.0007371444371869168,
-        "hazard_ratio": 0.9992631271870275,
-        "p_value": 0.8886254689110944,
-        "significant": false
-      },
-      "debt_to_income": {
-        "coefficient": 0.5379664415018025,
-        "hazard_ratio": 1.7125208075966045,
-        "p_value": 0.021667823495839865,
-        "significant": true
-      },
-      "log_loan_amount": {
-        "coefficient": -0.08808660692712253,
-        "hazard_ratio": 0.9156815689221657,
-        "p_value": 0.22750597111725468,
-        "significant": false
-      },
-      "interest_rate": {
-        "coefficient": 0.03773220030664879,
-        "hazard_ratio": 1.0384530982167093,
-        "p_value": 0.14444769862620188,
-        "significant": false
-      },
-      "ltv_ratio": {
-        "coefficient": 0.117697030530404,
-        "hazard_ratio": 1.1249032483938999,
-        "p_value": 0.7248954033713204,
-        "significant": false
-      }
-    }
+  "cox_hazard_ratios": {
+    "income": 1.0271137622055786,
+    "credit_score": 0.9992550997719657,
+    "employment_years": 1.002499048778376,
+    "debt_to_income": 1.29725727115364,
+    "loan_amount": 0.9923975348869274,
+    "interest_rate": 1.26518029975451,
+    "LTV_ratio": 1.5657434697333623
   },
-  "chiizer": {
-    "income_band": {
-      "Medium": {
-        "n": "1860",
-        "survival_12m": 0.9381720430107529,
-        "survival_24m": 0.877956989247312,
-        "median_survival": null
-      },
-      "Low": {
-        "n": "1107",
-        "survival_12m": 0.8852755194218604,
-        "survival_24m": 0.8084914182475157,
-        "median_survival": null
-      },
-      "High": {
-        "n": "1073",
-        "survival_12m": 0.9422180801491148,
-        "survival_24m": 0.891891891891892,
-        "median_survival": null
-      },
-      "Very High": {
-        "n": "758",
-        "survival_12m": 0.9432717678100262,
-        "survival_24m": 0.9036939313984171,
-        "median_survival": null
-      },
-      "Very Low": {
-        "n": "202",
-        "survival_12m": 0.7475247524752473,
-        "survival_24m": 0.6039603960396038,
-        "median_survival": null
-      }
-    },
-    "ltv_band": {
-      "Very Low": {
-        "n": "4193",
-        "survival_12m": 0.9236823276890065,
-        "survival_24m": 0.8588123062246613,
-        "median_survival": null
-      },
-      "Low": {
-        "n": "674",
-        "survival_12m": 0.9020771513353119,
-        "survival_24m": 0.8575667655786353,
-        "median_survival": null
-      },
-      "Medium": {
-        "n": "110",
-        "survival_12m": 0.9090909090909092,
-        "survival_24m": 0.8454545454545455,
-        "median_survival": null
-      },
-      "High": {
-        "n": "23",
-        "survival_12m": 0.9130434782608696,
-        "survival_24m": 0.8695652173913042,
-        "median_survival": null
-      }
-    },
-    "dti_band": {
-      "Very Low": {
-        "n": "456",
-        "survival_12m": 0.9364035087719297,
-        "survival_24m": 0.8771929824561397,
-        "median_survival": null
-      },
-      "Low": {
-        "n": "1714",
-        "survival_12m": 0.9171528588098015,
-        "survival_24m": 0.8658109684947489,
-        "median_survival": null
-      },
-      "High": {
-        "n": "733",
-        "survival_12m": 0.9222373806275583,
-        "survival_24m": 0.8499317871759893,
-        "median_survival": null
-      },
-      "Medium": {
-        "n": "1317",
-        "survival_12m": 0.9217919514047083,
-        "survival_24m": 0.8580106302201974,
-        "median_survival": null
-      },
-      "Very High": {
-        "n": "780",
-        "survival_12m": 0.914102564102564,
-        "survival_24m": 0.8397435897435894,
-        "median_survival": null
-      }
-    }
+  "cox_pvalues": {
+    "income": 0.4932748756206997,
+    "credit_score": 6.944341994765704e-07,
+    "employment_years": 0.5841551678877831,
+    "debt_to_income": 0.28469639681051234,
+    "loan_amount": 0.7551879547607296,
+    "interest_rate": 0.7523006646738734,
+    "LTV_ratio": 8.058857478831781e-06
   },
+  "concordance_index": 0.551192733044753,
   "new_applicant_prediction": {
     "applicant": {
-      "income": 65000,
-      "credit_score": 720,
-      "employment_years": 7,
+      "income": 55000,
+      "credit_score": 710,
+      "employment_years": 4.5,
       "debt_to_income": 0.28,
-      "loan_amount": 180000,
-      "interest_rate": 7.5,
-      "ltv_ratio": 0.75
+      "loan_amount": 25000,
+      "interest_rate": 0.085,
+      "LTV_ratio": 0.65
     },
-    "survival_12m": 0.9080459770114943,
-    "survival_24m": 0.8850574712643681,
-    "median_survival_months": null,
-    "similar_profiles_n": 174
-  },
-  "summary": {
-    "total_loans": 5000,
-    "default_rate": 0.1416,
-    "top_default_risk_factors": [
-      "debt_to_income",
-      "ltv_ratio",
-      "interest_rate"
-    ]
+    "survival_curve": {
+      "timeline": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36
+      ],
+      "probabilities": [
+        0.9868,
+        0.9868,
+        0.9791,
+        0.9725,
+        0.9653,
+        0.9605,
+        0.9538,
+        0.9459,
+        0.9382,
+        0.9303,
+        0.9233,
+        0.917,
+        0.9095,
+        0.9019,
+        0.8971,
+        0.8895,
+        0.8848,
+        0.8772,
+        0.8713,
+        0.8634,
+        0.8579,
+        0.8532,
+        0.8448,
+        0.8378,
+        0.8313,
+        0.822,
+        0.8151,
+        0.8059,
+        0.8009,
+        0.7943,
+        0.7886,
+        0.7794,
+        0.7725,
+        0.7645,
+        0.7558,
+        0.7478,
+        0.7383
+      ]
+    }
   }
 }
