@@ -1,210 +1,155 @@
-"""
-Predict survival function for a new loan applicant.
-Uses fitted Cox PH model to generate time-to-default predictions.
-"""
+"""Predict survival function for a new loan applicant."""
 
 import numpy as np
-import pandas as pd
-from lifelines import KaplanMeierFitter
+import matplotlib.pyplot as plt
+from lifelines import CoxPHFitter, KaplanMeierFitter
+from src.data_loader import generate_loan_data
 
 
-def predict_survival_for_applicant(cph, applicant, t_values=None):
+def train_survival_model(df, time_col='time_end', event_col='event_default'):
+    """Train Cox PH model for prediction."""
+    df_model = df.copy()
+
+    features = ['credit_score', 'employment_years', 'debt_to_income',
+                'loan_amount', 'interest_rate', 'LTV_ratio']
+
+    # Standardize features
+    for col in features:
+        df_model[f'{col}_scaled'] = (df_model[col] - df_model[col].mean()) / df_model[col].std()
+
+    df_model = df_model.dropna(subset=[time_col, event_col])
+
+    scaled_features = [f'{col}_scaled' for col in features]
+
+    cph = CoxPHFitter()
+    cph.fit(df_model[scaled_features + [time_col, event_col]],
+            duration_col=time_col, event_col=event_col)
+
+    # Also fit a baseline Kaplan-Meier for the overall population
+    kmf = KaplanMeierFitter()
+    kmf.fit(df_model[time_col], df_model[event_col])
+
+    # Store means/stds for inverse scaling
+    normalization = {col: {'mean': df[col].mean(), 'std': df[col].std()} for col in features}
+
+    return {'cph': cph, 'kmf': kmf, 'normalization': normalization, 'features': features}
+
+
+def predict_survival_for_applicant(model_data, applicant, ax=None):
+    """Predict survival curve for a new applicant.
+
+    applicant: dict with keys for credit_score, employment_years, debt_to_income,
+               loan_amount, interest_rate, LTV_ratio
     """
-    Predict survival curve for a new applicant using fitted Cox model.
+    cph = model_data['cph']
+    normalization = model_data['normalization']
+    features = model_data['features']
 
-    Parameters
-    ----------
-    cph : CoxPHFitter
-        Fitted Cox proportional hazards model
-    applicant : dict
-        Dictionary of applicant features:
-        {
-            'credit_score': int,
-            'employment_years': float,
-            'debt_to_income': float,
-            'loan_amount': float,
-            'interest_rate': float,
-            'LTV_ratio': float,
-        }
-    t_values : array, optional
-        Time points at which to predict survival. Defaults to range(0, 37, 1)
+    # Scale the applicant data
+    scaled_applicant = {}
+    for col in features:
+        scaled_applicant[f'{col}_scaled'] = (
+            (applicant[col] - normalization[col]['mean']) / normalization[col]['std']
+        )
 
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with time and predicted_survival columns
-    """
-    if t_values is None:
-        t_values = list(range(0, 37))
+    # Create dataframe for prediction
+    pred_df = {f'{col}_scaled': [scaled_applicant[f'{col}_scaled']] for col in features}
+    pred_df[features[0]] = [applicant[features[0]]]  # placeholder
 
-    # Build feature vector in correct order
-    feature_cols = [
-        'credit_score',
-        'employment_years',
-        'debt_to_income',
-        'interest_rate',
-        'LTV_ratio',
-        'log_loan_amount',
-    ]
+    # Predict median survival time and hazard
+    # For Cox PH, we can compute the predicted hazard/risk score
+    X = np.array([[scaled_applicant[f'{col}_scaled'] for col in features]])
+    linear_predictor = cph.predict_partial_hazard(X)[0]
 
-    # Compute derived features
-    applicant_features = {
-        'credit_score': applicant['credit_score'],
-        'employment_years': applicant['employment_years'],
-        'debt_to_income': applicant['debt_to_income'],
-        'interest_rate': applicant['interest_rate'],
-        'LTV_ratio': applicant['LTV_ratio'],
-        'log_loan_amount': np.log(applicant['loan_amount'] + 1),
+    # Predict survival times (median)
+    median_pred = cph.predict_median(X)
+    if isinstance(median_pred, (float, np.floating)) or (hasattr(median_pred, '__iter__') and not hasattr(median_pred, '__len__')):
+        median_pred = float(median_pred) if not np.isinf(median_pred) else None
+    elif hasattr(median_pred, '__iter__'):
+        median_pred = float(median_pred[0]) if len(median_pred) > 0 and not np.isinf(median_pred[0]) else None
+    else:
+        median_pred = None
+
+    # Get survival function
+    timeline = np.arange(1, 61)
+    surv_func = cph.predict_survival_function(X)
+    if hasattr(surv_func, 'flatten'):
+        baseline_survival = surv_func.flatten()
+    else:
+        baseline_survival = surv_func.values.flatten()
+
+    result = {
+        'linear_predictor': linear_predictor,
+        'median_survival_months': median_pred,
+        'survival_function': dict(zip(timeline, baseline_survival)),
+        'risk_score': linear_predictor,  # Higher = more risk
     }
 
-    # Create DataFrame for prediction
-    X = pd.DataFrame([applicant_features])[feature_cols]
-
-    # Predict median survival and hazard
-    # The Cox model gives us log(hazard) = X @ beta
-    # Survival at time t = exp(-H(t)) where H(t) = base_hazard_cumulative * exp(X @ beta)
-
-    # For simplicity, use the predict_expectation which gives E[T]
-    # and predict_percentile for survival curve
-
-    # Get survival function via predicting conditional median
-    # Use the conditional_after parameter for flexible time predictions
-
-    predictions = []
-    for t in t_values:
-        try:
-            # Calculate survival at time t using baseline and applicant hazard
-            # S(t) = exp(-H_0(t) * exp(Xβ))
-            # We approximate this using the model's baseline cumulative hazard
-
-            # Get baseline cumulative hazard at time t
-            baseline_hazard = cph.baseline_cumulative_hazard_
-            if len(baseline_hazard) > 0:
-                # Interpolate to time t
-                times = baseline_hazard.index.values
-                if t <= times.max():
-                    idx = np.searchsorted(times, t)
-                    if idx >= len(baseline_hazard):
-                        idx = len(baseline_hazard) - 1
-                    H0_t = baseline_hazard.iloc[idx, 0]
-                else:
-                    H0_t = baseline_hazard.iloc[-1, 0]
-
-                # Calculate linear predictor
-                X_beta = sum(
-                    applicant_features[col] * cph.params_.get(col, 0)
-                    for col in feature_cols if col in cph.params_
-                )
-
-                # Survival probability
-                survival_prob = np.exp(-H0_t * np.exp(X_beta))
-            else:
-                survival_prob = np.nan
-
-            predictions.append({
-                'time_months': t,
-                'predicted_survival': round(survival_prob, 4) if not np.isnan(survival_prob) else None
-            })
-        except Exception as e:
-            predictions.append({
-                'time_months': t,
-                'predicted_survival': None
-            })
-
-    return pd.DataFrame(predictions)
+    return result
 
 
-def expected_default_month(cph, applicant, threshold=0.5):
-    """
-    Predict the expected month of default (when survival drops below threshold).
+def plot_applicant_survival(result, applicant_id='New Applicant', ax=None):
+    """Plot survival curve for an applicant."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-    Parameters
-    ----------
-    cph : CoxPHFitter
-        Fitted Cox model
-    applicant : dict
-        Applicant features
-    threshold : float
-        Survival probability threshold (default 0.5 = median)
+    timeline = list(result['survival_function'].keys())
+    survival = list(result['survival_function'].values())
 
-    Returns
-    -------
-    float
-        Estimated months until default, or None if survival stays above threshold
-    """
-    t_values = list(range(0, 37))
-    survival_df = predict_survival_for_applicant(cph, applicant, t_values)
+    ax.plot(timeline, survival, 'b-', linewidth=2, label=f'{applicant_id}')
 
-    below_threshold = survival_df[survival_df['predicted_survival'] <= threshold]
+    # Add reference lines
+    ax.axhline(y=0.5, color='red', linestyle='--', alpha=0.5, label='50% survival')
+    ax.axvline(x=12, color='green', linestyle='--', alpha=0.5, label='12 months')
+    ax.axvline(x=24, color='orange', linestyle='--', alpha=0.5, label='24 months')
 
-    if len(below_threshold) > 0:
-        return below_threshold['time_months'].iloc[0]
-    else:
-        return None
+    # Mark median survival
+    median = result['median_survival_months']
+    if median:
+        median_surv = result['survival_function'].get(int(median), 0.5)
+        ax.plot(median, median_surv, 'ro', markersize=10)
+        ax.annotate(f'Median: {median:.0f} mo', xy=(median, median_surv),
+                   xytext=(median + 5, median_surv + 0.1),
+                   arrowprops=dict(arrowstyle='->', color='red'),
+                   fontsize=10, color='red')
 
+    ax.set_xlabel('Months')
+    ax.set_ylabel('Survival Probability')
+    ax.set_title(f'Survival Curve Prediction for {applicant_id}')
+    ax.legend(loc='lower left')
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim(0, 1.05)
+    ax.set_xlim(0, 60)
 
-def risk_segment_applicant(applicant):
-    """
-    Classify an applicant into risk segment based on credit score.
-
-    Returns
-    -------
-    dict with segment name, expected 12m and 24m survival
-    """
-    score = applicant['credit_score']
-
-    if score < 580:
-        segment = 'Deep Subprime'
-        base_surv_12 = 0.65
-        base_surv_24 = 0.45
-    elif score < 670:
-        segment = 'Subprime'
-        base_surv_12 = 0.78
-        base_surv_24 = 0.60
-    elif score < 740:
-        segment = 'Near Prime'
-        base_surv_12 = 0.88
-        base_surv_24 = 0.75
-    else:
-        segment = 'Prime'
-        base_surv_12 = 0.93
-        base_surv_24 = 0.85
-
-    return {
-        'segment': segment,
-        'credit_score_band': f'{segment} ({score})',
-        'base_survival_12m': base_surv_12,
-        'base_survival_24m': base_surv_24,
-    }
+    return ax
 
 
 if __name__ == '__main__':
-    from data_loader import generate_loan_data, add_credit_band
-    from cox_ph import fit_cox_ph
-
-    df = generate_loan_data(5000)
-    df = add_credit_band(df)
-    cph = fit_cox_ph(df)
+    df = generate_loan_data()
+    model = train_survival_model(df)
 
     # Example applicant
     new_applicant = {
-        'credit_score': 650,
-        'employment_years': 3.5,
-        'debt_to_income': 0.32,
-        'loan_amount': 350000,
-        'interest_rate': 0.18,
-        'LTV_ratio': 0.75,
+        'credit_score': 720,
+        'employment_years': 5.0,
+        'debt_to_income': 0.25,
+        'loan_amount': 250000,
+        'interest_rate': 0.105,
+        'LTV_ratio': 0.70,
     }
 
-    print("New Applicant Profile:")
-    for k, v in new_applicant.items():
-        print(f"  {k}: {v}")
+    result = predict_survival_for_applicant(model, new_applicant)
 
-    print("\nRisk Segment:", risk_segment_applicant(new_applicant)['segment'])
+    print("Applicant Prediction:")
+    print(f"  Risk Score (linear predictor): {result['risk_score']:.4f}")
+    print(f"  Median Survival: {result['median_survival_months']:.1f} months" if result['median_survival_months'] else "  Median Survival: Not reached")
+    print(f"  12-month survival: {result['survival_function'].get(12, 'N/A'):.1%}")
+    print(f"  24-month survival: {result['survival_function'].get(24, 'N/A'):.1%}")
 
-    survival_curve = predict_survival_for_applicant(cph, new_applicant)
-    print("\nPredicted Survival Curve:")
-    print(survival_curve[survival_curve['time_months'].isin([6, 12, 18, 24])].to_string(index=False))
-
-    exp_default = expected_default_month(cph, new_applicant)
-    print(f"\nExpected Default Month (50% survival): {exp_default}")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    plot_applicant_survival(result, 'Good Credit Applicant', ax)
+    plt.tight_layout()
+    plt.savefig('/home/workspace/Projects/survival-analysis-time-to-default/reports/applicant_survival.png',
+                dpi=150, bbox_inches='tight')
+    plt.close()
+    print("\nSaved: reports/applicant_survival.png")

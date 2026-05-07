@@ -1,133 +1,100 @@
-"""
-Cox Proportional Hazards model for time-to-default.
-Fits model, interprets coefficients, computes hazard ratios.
-"""
+"""Cox Proportional Hazards model for credit risk factors."""
 
 import numpy as np
 import pandas as pd
 from lifelines import CoxPHFitter
+from src.data_loader import generate_loan_data
 
 
-def fit_cox_ph(df, time_col='time_end', event_col='event_default'):
-    """
-    Fit Cox Proportional Hazards model on loan features.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Data with time, event, and feature columns
-    time_col : str
-        Name of time column
-    event_col : str
-        Name of event indicator (1=default, 0=censored)
-
-    Returns
-    -------
-    CoxPHFitter
-        Fitted Cox model
-    """
-    # Select features for the model
-    feature_cols = [
-        'credit_score',
-        'employment_years',
-        'debt_to_income',
-        'loan_amount',
-        'interest_rate',
-        'LTV_ratio',
-    ]
-
-    # Prepare data - add log-transformed features to the dataframe
+def fit_cox_ph_model(df, time_col='time_end', event_col='event_default'):
+    """Fit Cox PH model and return results."""
     df_model = df.copy()
-    df_model['log_loan_amount'] = np.log(df_model['loan_amount'] + 1)
 
-    features_for_model = [
-        'credit_score',
-        'employment_years',
-        'debt_to_income',
-        'interest_rate',
-        'LTV_ratio',
-        'log_loan_amount',
-    ]
+    # Select features for Cox model
+    features = ['credit_score', 'employment_years', 'debt_to_income',
+                'loan_amount', 'interest_rate', 'LTV_ratio']
+
+    # Drop rows with missing values
+    df_model = df_model.dropna(subset=features + [time_col, event_col])
+
+    # Standardize for better interpretation
+    for col in features:
+        df_model[f'{col}_scaled'] = (df_model[col] - df_model[col].mean()) / df_model[col].std()
+
+    scaled_features = [f'{col}_scaled' for col in features]
 
     # Fit Cox PH model
     cph = CoxPHFitter()
-    cph.fit(
-        df_model[features_for_model + [time_col, event_col]],
-        duration_col=time_col,
-        event_col=event_col
-    )
+    cph.fit(df_model[scaled_features + [time_col, event_col]],
+            duration_col=time_col, event_col=event_col)
 
-    return cph
+    # Extract coefficients
+    coef_df = cph.summary[['coef', 'exp(coef)', 'se(coef)', 'z', 'p']].copy()
+    coef_df.columns = ['coefficient', 'hazard_ratio', 'std_error', 'z_stat', 'p_value']
 
+    # Add feature names
+    coef_df['feature'] = features
+    coef_df = coef_df[['feature', 'coefficient', 'hazard_ratio', 'std_error', 'z_stat', 'p_value']]
 
-def hazard_ratios_summary(cph):
-    """
-    Extract hazard ratios and confidence intervals from fitted Cox model.
+    # Significance stars
+    def significance_stars(p):
+        if p < 0.001:
+            return '***'
+        elif p < 0.01:
+            return '**'
+        elif p < 0.05:
+            return '*'
+        elif p < 0.1:
+            return '.'
+        return ''
 
-    Returns
-    -------
-    pd.DataFrame
-        Summary with variable, coef, hazard_ratio, se, ci_lower, ci_upper, p_value
-    """
-    summary = cph.summary.copy()
+    coef_df['significance'] = coef_df['p_value'].apply(significance_stars)
 
-    hr_df = pd.DataFrame({
-        'variable': summary.index,
-        'coefficient': summary['coef'].values,
-        'hazard_ratio': summary['exp(coef)'].values,
-        'std_error': summary['se(coef)'].values,
-        'p_value': summary['p'].values,
-    })
-
-    # Calculate 95% CI for hazard ratios
-    z = 1.96
-    hr_df['ci_lower'] = np.exp(hr_df['coefficient'] - z * hr_df['std_error'])
-    hr_df['ci_upper'] = np.exp(hr_df['coefficient'] + z * hr_df['std_error'])
-
-    hr_df = hr_df.round(4)
-
-    return hr_df.sort_values('hazard_ratio', ascending=False)
+    return {
+        'model': cph,
+        'coefficients': coef_df,
+        'concordance_index': cph.concordance_index_,
+        'log_likelihood': cph.log_likelihood_,
+        'AIC': cph.AIC_partial_,
+    }
 
 
-def top_risk_factors(hr_df, n=5):
-    """Return top N risk factors by hazard ratio."""
-    return hr_df.head(n)[['variable', 'hazard_ratio', 'ci_lower', 'ci_upper', 'p_value']]
+def interpret_coefficients(results):
+    """Interpret Cox PH results."""
+    print("\nCox Proportional Hazards Model Results")
+    print("=" * 70)
+    print(f"Concordance Index: {results['concordance_index']:.4f}")
+    print(f"Log-Likelihood: {results['log_likelihood']:.2f}")
+    print(f"AIC: {results['AIC']:.2f}")
+    print("\nCoefficients:")
+    print("-" * 70)
+    print(f"{'Feature':<20} {'Coef':>8} {'HR':>8} {'StdErr':>8} {'z':>8} {'P>|z|':>8} {'Sig':>4}")
+    print("-" * 70)
 
+    for _, row in results['coefficients'].iterrows():
+        print(f"{row['feature']:<20} {row['coefficient']:>8.4f} {row['hazard_ratio']:>8.4f} "
+              f"{row['std_error']:>8.4f} {row['z_stat']:>8.3f} {row['p_value']:>8.4f} {row['significance']:>4}")
 
-def interpret_coefficient(var_name, coef, hr):
-    """Generate human-readable interpretation of a coefficient."""
-    if hr > 1:
-        direction = 'increases'
-        factor = hr
-    else:
-        direction = 'decreases'
-        factor = 1 / hr
+    print("\n" + "=" * 70)
+    print("Interpretation:")
+    print("-" * 70)
+    for _, row in results['coefficients'].iterrows():
+        hr = row['hazard_ratio']
+        feature = row['feature']
+        if hr > 1:
+            effect = f"increases"
+            magnitude = f"{((hr - 1) * 100):.1f}% higher"
+        else:
+            effect = f"decreases"
+            magnitude = f"{((1 - hr) * 100):.1f}% lower"
 
-    return (
-        f"{var_name}: each unit increase {direction} default hazard by "
-        f"{factor:.2f}x (HR={hr:.3f})"
-    )
+        print(f"- {feature}: HR={hr:.4f} → {effect} default risk by {magnitude} per 1 SD increase")
+    print("=" * 70)
 
-
-def concordance_index(cph):
-    """Get model concordance index (C-statistic)."""
-    return round(cph.concordance_index_, 4)
+    return results
 
 
 if __name__ == '__main__':
-    from src.data_loader import generate_loan_data, add_credit_band
-
-    df = generate_loan_data(5000)
-    df = add_credit_band(df)
-
-    cph = fit_cox_ph(df)
-    print("Cox PH Model Summary")
-    print("=" * 50)
-    cph.print_summary()
-
-    print("\n\nHazard Ratios:")
-    print("-" * 50)
-    hr_df = hazard_ratios_summary(cph)
-    print(hr_df.to_string(index=False))
-
-    print(f"\nConcordance Index: {concordance_index(cph)}")
+    df = generate_loan_data()
+    results = fit_cox_ph_model(df)
+    interpret_coefficients(results)
