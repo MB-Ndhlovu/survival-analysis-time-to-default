@@ -1,139 +1,146 @@
 {
+  "generated_at": "2026-05-07T00:21:49.131203",
   "n_records": 5000,
-  "n_defaults": 3255,
-  "n_censored": 1745,
-  "median_survival_months": {
-    "Deep Subprime (<580)": 75.0,
-    "Subprime (580-669)": 76.0,
-    "Near Prime (670-739)": 92.0,
-    "Prime (740+)": 99.0
-  },
-  "survival_probabilities": {
-    "Deep Subprime (<580)": {
-      "12mo": 0.9107790973680254,
-      "24mo": 0.8333559501231862
+  "n_defaults": 2409,
+  "n_censored": 2591,
+  "km_by_credit_band": {
+    "Deep Subprime": {
+      "n_obs": 1261,
+      "n_defaults": 695,
+      "n_censored": 566,
+      "median_survival_months": 18.0,
+      "survival_12_months": 0.5734,
+      "survival_24_months": 0.4489
     },
-    "Subprime (580-669)": {
-      "12mo": 0.9144922447121316,
-      "24mo": 0.8480161109970562
+    "Subprime": {
+      "n_obs": 1425,
+      "n_defaults": 771,
+      "n_censored": 654,
+      "median_survival_months": 20.0,
+      "survival_12_months": 0.6204,
+      "survival_24_months": 0.4589
     },
-    "Near Prime (670-739)": {
-      "12mo": 0.9330033165687432,
-      "24mo": 0.8642486374171561
+    "Near Prime": {
+      "n_obs": 1037,
+      "n_defaults": 454,
+      "n_censored": 583,
+      "median_survival_months": null,
+      "survival_12_months": 0.6837,
+      "survival_24_months": 0.5622
     },
-    "Prime (740+)": {
-      "12mo": 0.9317339441395606,
-      "24mo": 0.8720104660715515
+    "Prime": {
+      "n_obs": 1277,
+      "n_defaults": 489,
+      "n_censored": 788,
+      "median_survival_months": null,
+      "survival_12_months": 0.751,
+      "survival_24_months": 0.6171
     }
   },
-  "cox_hazard_ratios": {
-    "income": 1.0271137622055786,
-    "credit_score": 0.9992550997719657,
-    "employment_years": 1.002499048778376,
-    "debt_to_income": 1.29725727115364,
-    "loan_amount": 0.9923975348869274,
-    "interest_rate": 1.26518029975451,
-    "LTV_ratio": 1.5657434697333623
+  "cox_ph": {
+    "concordance_index": 0.574,
+    "log_likelihood": -19744.2949,
+    "AIC": 39506.5898,
+    "hazard_ratios": {
+      "credit_score": 0.9981,
+      "employment_years": 0.9936,
+      "debt_to_income": 1.0069,
+      "log_loan_amount": 1.2555,
+      "interest_rate": 0.2531,
+      "LTV_ratio": 1.2999,
+      "log_income": 0.98
+    }
   },
-  "cox_pvalues": {
-    "income": 0.4932748756206997,
-    "credit_score": 6.944341994765704e-07,
-    "employment_years": 0.5841551678877831,
-    "debt_to_income": 0.28469639681051234,
-    "loan_amount": 0.7551879547607296,
-    "interest_rate": 0.7523006646738734,
-    "LTV_ratio": 8.058857478831781e-06
-  },
-  "concordance_index": 0.551192733044753,
-  "new_applicant_prediction": {
-    "applicant": {
-      "income": 55000,
-      "credit_score": 710,
-      "employment_years": 4.5,
-      "debt_to_income": 0.28,
-      "loan_amount": 25000,
-      "interest_rate": 0.085,
-      "LTV_ratio": 0.65
+  "chiizer": {
+    "DTI": {
+      "Low DTI (<20%)": {
+        "survival_12": 0.7016,
+        "survival_24": 0.5624,
+        "median": null
+      },
+      "Medium DTI (20-35%)": {
+        "survival_12": 0.6688,
+        "survival_24": 0.544,
+        "median": null
+      },
+      "High DTI (35-50%)": {
+        "survival_12": 0.6384,
+        "survival_24": 0.48,
+        "median": 21.0
+      },
+      "Very High DTI (>50%)": {
+        "survival_12": 0.6112,
+        "survival_24": 0.4864,
+        "median": 22.0
+      }
     },
-    "survival_curve": {
-      "timeline": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
-        21,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27,
-        28,
-        29,
-        30,
-        31,
-        32,
-        33,
-        34,
-        35,
-        36
-      ],
-      "probabilities": [
-        0.9868,
-        0.9868,
-        0.9791,
-        0.9725,
-        0.9653,
-        0.9605,
-        0.9538,
-        0.9459,
-        0.9382,
-        0.9303,
-        0.9233,
-        0.917,
-        0.9095,
-        0.9019,
-        0.8971,
-        0.8895,
-        0.8848,
-        0.8772,
-        0.8713,
-        0.8634,
-        0.8579,
-        0.8532,
-        0.8448,
-        0.8378,
-        0.8313,
-        0.822,
-        0.8151,
-        0.8059,
-        0.8009,
-        0.7943,
-        0.7886,
-        0.7794,
-        0.7725,
-        0.7645,
-        0.7558,
-        0.7478,
-        0.7383
-      ]
+    "LTV": {
+      "Low LTV (<0.70)": {
+        "survival_12": 0.6679,
+        "survival_24": 0.5281,
+        "median": null
+      },
+      "Medium LTV (0.70-0.90)": {
+        "survival_12": 0.6544,
+        "survival_24": 0.5252,
+        "median": null
+      },
+      "High LTV (>0.90)": {
+        "survival_12": 0.6426,
+        "survival_24": 0.5012,
+        "median": null
+      }
+    },
+    "Employment": {
+      "<2 Years": {
+        "survival_12": 0.6413,
+        "survival_24": 0.5078,
+        "median": null
+      },
+      "2-8 Years": {
+        "survival_12": 0.652,
+        "survival_24": 0.5234,
+        "median": null
+      },
+      "8+ Years": {
+        "survival_12": 0.6717,
+        "survival_24": 0.5234,
+        "median": null
+      }
+    },
+    "Loan Amount": {
+      "Small (<$50k)": {
+        "survival_12": 0.7052,
+        "survival_24": 0.5736,
+        "median": null
+      },
+      "Medium ($50-150k)": {
+        "survival_12": 0.6104,
+        "survival_24": 0.4752,
+        "median": 21.0
+      },
+      "Large ($150-300k)": {
+        "survival_12": 0.5992,
+        "survival_24": 0.4504,
+        "median": 19.0
+      }
+    }
+  },
+  "predictions": {
+    "Low-Risk Prime Borrower": {
+      "hazard_ratio": 0.3081,
+      "survival_12_months": 0.8778,
+      "survival_24_months": 0.8167
+    },
+    "Near-Prime Borrower": {
+      "hazard_ratio": 0.494,
+      "survival_12_months": 0.8114,
+      "survival_24_months": 0.7227
+    },
+    "High-Risk Subprime Borrower": {
+      "hazard_ratio": 1.3094,
+      "survival_12_months": 0.5746,
+      "survival_24_months": 0.4228
     }
   }
 }

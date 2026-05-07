@@ -1,81 +1,157 @@
-import numpy as np
+"""Risk Chiizer: bin continuous variables into risk categories and compute survival curves."""
+
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
+import numpy as np
 import matplotlib.pyplot as plt
 from lifelines import KaplanMeierFitter
 
-def build_risk_chiizer(df):
-    """Bin continuous variables and compute survival curves per bin.
 
-    Returns dict of chiizer results for:
-        - debt_to_income bins (Low <0.20, Medium 0.20-0.35, High >0.35)
-        - LTV_ratio bins (Low <0.50, Medium 0.50-0.75, High >0.75)
-        - employment_years bins (0-2, 2-5, 5+)
+def bin_variable(df: pd.DataFrame, var: str, n_bins: int = 4, labels: list = None) -> pd.Series:
+    """Bin a continuous variable into quantiles."""
+    # Use retbins=True to get actual number of bins after dropping duplicates
+    try:
+        bins = pd.qcut(df[var], q=n_bins, duplicates='drop', retbins=True)[1]
+        actual_bins = len(bins) - 1
+    except ValueError:
+        actual_bins = n_bins
+    
+    if labels is None:
+        labels = [f'Q{i+1}' for i in range(actual_bins)]
+    else:
+        labels = labels[:actual_bins]
+    
+    return pd.qcut(df[var], q=n_bins, labels=labels, duplicates='drop')
+
+
+def chiize_risk(
+    df: pd.DataFrame,
+    output_dir: str = 'reports'
+) -> dict:
+    """Build a risk chiizer by bining key variables and computing survival curves.
+
+    Creates risk categories for:
+    - Debt-to-income ratio
+    - LTV ratio
+    - Employment years
+    - Loan amount
+
+    Returns dict with survival stats for each bin.
     """
+    df = df.copy()
+
+    # Bin key risk factors
+    df['DTI_bin'] = bin_variable(df, 'debt_to_income', n_bins=4,
+                                 labels=['Low DTI (<20%)', 'Medium DTI (20-35%)', 
+                                        'High DTI (35-50%)', 'Very High DTI (>50%)'])
+    
+    df['LTV_bin'] = bin_variable(df, 'LTV_ratio', n_bins=3,
+                                 labels=['Low LTV (<0.70)', 'Medium LTV (0.70-0.90)', 'High LTV (>0.90)'])
+    
+    df['Emp_bin'] = bin_variable(df, 'employment_years', n_bins=3,
+                                 labels=['<2 Years', '2-8 Years', '8+ Years'])
+    
+    df['Loan_bin'] = bin_variable(df, 'loan_amount', n_bins=4,
+                                  labels=['Small (<$50k)', 'Medium ($50-150k)', 
+                                         'Large ($150-300k)', 'Jumbo (>300k)'])
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
+
+    chiizer_results = {}
+
+    # DTI analysis
     kmf = KaplanMeierFitter()
-    results = {}
+    dti_results = {}
+    for i, (cat, group_df) in enumerate(df.groupby('DTI_bin', observed=True)):
+        kmf.fit(group_df['time_end'], group_df['event_default'], label=cat)
+        surv_12 = kmf.survival_function_at_times(12).values[0]
+        surv_24 = kmf.survival_function_at_times(24).values[0]
+        med = kmf.median_survival_time_
+        med = med if not np.isinf(med) else None
+        dti_results[cat] = {'survival_12': round(float(surv_12), 4), 
+                            'survival_24': round(float(surv_24), 4),
+                            'median': med}
+        kmf.plot_survival_function(ax=axes[0], ci_show=True)
 
-    # --- DTI chiizer ---
-    dti_bands = [
-        ("Low DTI (<20%)",  df["debt_to_income"] < 0.20),
-        ("Med DTI (20-35%)", (df["debt_to_income"] >= 0.20) & (df["debt_to_income"] <= 0.35)),
-        ("High DTI (>35%)",  df["debt_to_income"] > 0.35),
-    ]
-    results["debt_to_income"] = _chiize(kmf, df, dti_bands, "Debt-to-Income Ratio")
+    axes[0].set_title('Survival by DTI Ratio', fontsize=11)
+    axes[0].set_xlabel('Months'); axes[0].set_ylabel('Survival Probability')
+    axes[0].legend(loc='lower left'); axes[0].grid(True, alpha=0.3)
+    chiizer_results['DTI'] = dti_results
 
-    # --- LTV chiizer ---
-    ltv_bands = [
-        ("Low LTV (<50%)",  df["LTV_ratio"] < 0.50),
-        ("Med LTV (50-75%)", (df["LTV_ratio"] >= 0.50) & (df["LTV_ratio"] <= 0.75)),
-        ("High LTV (>75%)",  df["LTV_ratio"] > 0.75),
-    ]
-    results["LTV_ratio"] = _chiize(kmf, df, ltv_bands, "LTV Ratio")
+    # LTV analysis
+    kmf = KaplanMeierFitter()
+    ltv_results = {}
+    for cat, group_df in df.groupby('LTV_bin', observed=True):
+        kmf.fit(group_df['time_end'], group_df['event_default'], label=cat)
+        surv_12 = kmf.survival_function_at_times(12).values[0]
+        surv_24 = kmf.survival_function_at_times(24).values[0]
+        med = kmf.median_survival_time_
+        med = med if not np.isinf(med) else None
+        ltv_results[cat] = {'survival_12': round(float(surv_12), 4),
+                           'survival_24': round(float(surv_24), 4),
+                           'median': med}
+        kmf.plot_survival_function(ax=axes[1], ci_show=True)
 
-    # --- Employment chiizer ---
-    emp_bands = [
-        ("0-2 years",    df["employment_years"] <= 2),
-        ("2-5 years",    (df["employment_years"] > 2) & (df["employment_years"] <= 5)),
-        ("5+ years",     df["employment_years"] > 5),
-    ]
-    results["employment_years"] = _chiize(kmf, df, emp_bands, "Employment Years")
+    axes[1].set_title('Survival by LTV Ratio', fontsize=11)
+    axes[1].set_xlabel('Months'); axes[1].set_ylabel('Survival Probability')
+    axes[1].legend(loc='lower left'); axes[1].grid(True, alpha=0.3)
+    chiizer_results['LTV'] = ltv_results
 
-    # Save combined plot
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    for ax, (var, data) in zip(axes, results.items()):
-        for label, km_data in data["curves"].items():
-            ax.plot(km_data["timeline"], km_data["survival"], label=label, linewidth=2)
-        ax.set_title(data["title"])
-        ax.set_xlabel("Months")
-        ax.set_ylabel("Survival Probability")
-        ax.legend(fontsize=8)
-        ax.grid(alpha=0.3)
+    # Employment analysis
+    kmf = KaplanMeierFitter()
+    emp_results = {}
+    for cat, group_df in df.groupby('Emp_bin', observed=True):
+        kmf.fit(group_df['time_end'], group_df['event_default'], label=cat)
+        surv_12 = kmf.survival_function_at_times(12).values[0]
+        surv_24 = kmf.survival_function_at_times(24).values[0]
+        med = kmf.median_survival_time_
+        med = med if not np.isinf(med) else None
+        emp_results[cat] = {'survival_12': round(float(surv_12), 4),
+                            'survival_24': round(float(surv_24), 4),
+                            'median': med}
+        kmf.plot_survival_function(ax=axes[2], ci_show=True)
+
+    axes[2].set_title('Survival by Employment Length', fontsize=11)
+    axes[2].set_xlabel('Months'); axes[2].set_ylabel('Survival Probability')
+    axes[2].legend(loc='lower left'); axes[2].grid(True, alpha=0.3)
+    chiizer_results['Employment'] = emp_results
+
+    # Loan amount analysis
+    kmf = KaplanMeierFitter()
+    loan_results = {}
+    for cat, group_df in df.groupby('Loan_bin', observed=True):
+        kmf.fit(group_df['time_end'], group_df['event_default'], label=cat)
+        surv_12 = kmf.survival_function_at_times(12).values[0]
+        surv_24 = kmf.survival_function_at_times(24).values[0]
+        med = kmf.median_survival_time_
+        med = med if not np.isinf(med) else None
+        loan_results[cat] = {'survival_12': round(float(surv_12), 4),
+                             'survival_24': round(float(surv_24), 4),
+                             'median': med}
+        kmf.plot_survival_function(ax=axes[3], ci_show=True)
+
+    axes[3].set_title('Survival by Loan Amount', fontsize=11)
+    axes[3].set_xlabel('Months'); axes[3].set_ylabel('Survival Probability')
+    axes[3].legend(loc='lower left'); axes[3].grid(True, alpha=0.3)
+    chiizer_results['Loan Amount'] = loan_results
 
     plt.tight_layout()
-    plt.savefig("/home/workspace/Projects/survival-analysis-time-to-default/reports/chiizer_curves.png", dpi=150)
+    plt.savefig(f'{output_dir}/risk_chiizer.png', dpi=150, bbox_inches='tight')
     plt.close()
-    print("Saved: reports/chiizer_curves.png")
 
-    return results
+    # Print summary
+    print("\n=== Risk Chiizer Results ===")
+    for factor, bins in chiizer_results.items():
+        print(f"\n{factor}:")
+        for cat, stats in bins.items():
+            med = f"{stats['median']:.1f}" if stats['median'] else 'Not reached'
+            print(f"  {cat:<25} 12mo: {stats['survival_12']:.2%}  24mo: {stats['survival_24']:.2%}  Median: {med}")
 
-def _chiize(kmf, df, bands, title):
-    """Internal: fit KM for each bin and return curve data."""
-    curves = {}
-    for label, mask in bands:
-        band_df = df[mask]
-        if len(band_df) < 5:
-            continue
-        kmf.fit(band_df["time_end"], event_observed=band_df["event_default"], label=label)
-        timeline = np.arange(0, 37)
-        sf = kmf.survival_function_at_times(timeline)
-        curves[label] = {
-            "timeline": timeline.tolist(),
-            "survival": [float(sf[t]) if t in sf.index else None for t in timeline],
-        }
-    return {"title": title, "curves": curves}
+    return chiizer_results
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     from data_loader import generate_loan_data
     df = generate_loan_data()
-    results = build_risk_chiizer(df)
-    print("Chiizer complete.")
+    results = chiize_risk(df)
+    import json; print(json.dumps(results, indent=2))
