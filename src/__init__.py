@@ -1,1 +1,1 @@
-"""Survival Analysis Time-to-Default package."""
+"""Survival analysis modules for time-to-default analysis."""
