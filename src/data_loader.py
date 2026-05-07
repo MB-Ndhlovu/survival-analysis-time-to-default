@@ -1,122 +1,126 @@
-"""Generate synthetic loan data for survival analysis."""
-
+"""
+Data loader: generate synthetic loan data for survival analysis.
+"""
 import numpy as np
 import pandas as pd
+from numpy.random import default_rng
 
-np.random.seed(42)
-
-CENSORE_MONTHS = 24
-N_SAMPLES = 5000
-CENSOR_RATE = 0.35
+rng = default_rng(seed=42)
 
 
-def generate_loan_data(n_samples=N_SAMPLES, censore_months=CENSORE_MONTHS, censor_rate=CENSOR_RATE):
-    """Generate loan data with survival characteristics.
-
-    Returns DataFrame with columns:
-        time_start: observation start month (0)
-        time_end: event or censoring month
-        event_default: 1 if defaulted, 0 if censored
-        income: annual income in ZAR
-        credit_score: FICO-equivalent score
-        employment_years: years employed
-        debt_to_income: monthly debt payment / monthly income
-        loan_amount: loan principal in ZAR
-        interest_rate: annual interest rate as decimal
-        LTV_ratio: loan-to-value ratio
+def generate_loan_data(n: int = 5000, censor_at: int = 24) -> pd.DataFrame:
     """
-    # Credit score determines baseline risk
-    credit_score = np.random.normal(680, 100, n_samples)
-    credit_score = np.clip(credit_score, 300, 850).astype(int)
+    Generate n rows of synthetic loan data with survival characteristics.
 
-    # Income correlates loosely with credit score
-    income = credit_score * 150 + np.random.normal(30000, 20000, n_samples)
-    income = np.clip(income, 15000, 500000)
+    Fields:
+    - time_start: observation start (0)
+    - time_end: time of default or censoring
+    - event_default: 1 if default occurred, 0 if censored
+    - income: annual income in R (South African Rand)
+    - credit_score: FICO-equivalent score (300-850)
+    - employment_years: years employed
+    - debt_to_income: monthly debt / monthly income ratio
+    - loan_amount: loan principal in R
+    - interest_rate: annual interest rate as decimal
+    - LTV_ratio: loan-to-value ratio at origination
+    """
+    records = []
 
-    # Employment years
-    employment_years = np.random.exponential(5, n_samples)
-    employment_years = np.clip(employment_years, 0, 40)
+    for i in range(n):
+        # Credit score determines baseline risk
+        cs = rng.integers(300, 851)
 
-    # Debt to income ratio - higher for lower credit scores
-    base_dti = 0.28 + (700 - credit_score) / 700 * 0.15
-    debt_to_income = base_dti + np.random.normal(0, 0.05, n_samples)
-    debt_to_income = np.clip(debt_to_income, 0.05, 0.6)
+        # Income: R120k - R1.2M, skewed toward lower incomes
+        income = rng.exponential(scale=300_000) + 120_000
+        income = min(income, 1_200_000)
 
-    # Loan amount - correlated with income and credit
-    loan_amount = income * (0.3 + (credit_score - 500) / 1000) + np.random.normal(0, 50000, n_samples)
-    loan_amount = np.clip(loan_amount, 10000, 2000000)
+        # Employment years: 0-30, more people at lower end
+        emp_yrs = min(max(rng.exponential(scale=5), 0), 30)
 
-    # Interest rate - higher for lower credit scores (risk-based pricing)
-    base_rate = 0.08 + (700 - credit_score) / 700 * 0.12
-    interest_rate = base_rate + np.random.normal(0, 0.015, n_samples)
-    interest_rate = np.clip(interest_rate, 0.04, 0.25)
+        # Loan amount: R50k - R500k, correlated with income
+        loan_amount = min(max(income * rng.uniform(0.2, 0.8), 50_000), 500_000)
 
-    # LTV ratio - loan amount / collateral value (assume collateral ~ income * 2)
-    collateral = income * 2
-    LTV_ratio = loan_amount / collateral + np.random.normal(0, 0.05, n_samples)
-    LTV_ratio = np.clip(LTV_ratio, 0.1, 1.5)
+        # Interest rate: risk-based pricing
+        if cs < 580:
+            base_rate = rng.uniform(0.15, 0.22)
+        elif cs < 670:
+            base_rate = rng.uniform(0.10, 0.16)
+        elif cs < 740:
+            base_rate = rng.uniform(0.07, 0.11)
+        else:
+            base_rate = rng.uniform(0.04, 0.08)
+        interest_rate = base_rate
 
-    # Survival time model:
-    # Base hazard is higher for lower credit scores
-    # Hazard increases with DTI, interest rate, LTV
-    base_hazard = (
-        0.15
-        - 0.0003 * credit_score
-        + 0.5 * debt_to_income
-        + 2.0 * (interest_rate - 0.08)
-        + 0.3 * LTV_ratio
-        + np.random.normal(0, 0.3, n_samples)
-    )
+        # DTI: higher for riskier borrowers
+        if cs < 580:
+            dti = rng.uniform(0.30, 0.55)
+        elif cs < 670:
+            dti = rng.uniform(0.20, 0.40)
+        elif cs < 740:
+            dti = rng.uniform(0.15, 0.32)
+        else:
+            dti = rng.uniform(0.08, 0.25)
+        debt_to_income = dti
 
-    # Convert hazard to approximate survival months (exponential model)
-    time_to_default = np.random.exponential(scale=1 / np.maximum(base_hazard, 0.01), size=n_samples)
-    time_to_default = np.clip(time_to_default, 1, 60)
+        # LTV: loan_amount / collateral_value
+        if cs < 620:
+            ltv = rng.uniform(0.70, 0.95)
+        elif cs < 720:
+            ltv = rng.uniform(0.55, 0.85)
+        else:
+            ltv = rng.uniform(0.40, 0.75)
+        LTV_ratio = ltv
 
-    # Determine censoring - some loans haven't defaulted by censore_months
-    censor_mask = np.random.random(n_samples) < censor_rate
-    # Among those censored, some may naturally survive past 24 months
-    # Use actual time_to_default for non-censored
-    time_end = np.where(censor_mask, censore_months, np.minimum(time_to_default, censore_months))
+        # Simulate time to default using Weibull distribution
+        # Shape and scale vary by credit score
+        if cs < 580:
+            scale = rng.uniform(8, 14)
+            shape = rng.uniform(0.7, 0.9)  # increasing hazard
+        elif cs < 670:
+            scale = rng.uniform(14, 22)
+            shape = rng.uniform(0.8, 1.0)
+        elif cs < 740:
+            scale = rng.uniform(20, 30)
+            shape = rng.uniform(0.9, 1.1)
+        else:
+            scale = rng.uniform(28, 48)
+            shape = rng.uniform(1.0, 1.2)
 
-    # Event: 1 if defaulted (time_end < censore_months and not censored), 0 if censored
-    event_default = (~censor_mask).astype(int)
+        ttf = rng.weibull(shape) * scale
 
-    # Adjust: if actual default happened before censoring, mark as event
-    actual_default_mask = (time_to_default < censore_months) & (~censor_mask)
-    time_end = np.where(actual_default_mask, time_to_default, time_end)
-    event_default = np.where(actual_default_mask, 1, event_default)
+        # Determine if censored or defaulted
+        # ~35% censored at censor_at months
+        censor_prob = 0.35
+        if rng.random() < censor_prob:
+            time_end = censor_at
+            event_default = 0
+        else:
+            if ttf > censor_at:
+                time_end = censor_at
+                event_default = 0
+            else:
+                time_end = min(int(ttf), censor_at)
+                event_default = 1
 
-    df = pd.DataFrame({
-        'time_start': 0,
-        'time_end': time_end.astype(int),
-        'event_default': event_default,
-        'income': income.astype(int),
-        'credit_score': credit_score,
-        'employment_years': np.round(employment_years, 1),
-        'debt_to_income': np.round(debt_to_income, 4),
-        'loan_amount': loan_amount.astype(int),
-        'interest_rate': np.round(interest_rate, 4),
-        'LTV_ratio': np.round(LTV_ratio, 4),
-    })
+        records.append({
+            "time_start": 0,
+            "time_end": time_end,
+            "event_default": event_default,
+            "income": round(income, 2),
+            "credit_score": cs,
+            "employment_years": round(emp_yrs, 1),
+            "debt_to_income": round(debt_to_income, 4),
+            "loan_amount": round(loan_amount, 2),
+            "interest_rate": round(interest_rate, 4),
+            "LTV_ratio": round(LTV_ratio, 4),
+        })
 
-    return df
-
-
-def get_credit_score_band(score):
-    """Assign credit score to risk band."""
-    if score < 580:
-        return 'Very Poor (<580)'
-    elif score < 670:
-        return 'Fair (580-669)'
-    elif score < 740:
-        return 'Good (670-739)'
-    else:
-        return 'Excellent (740+)'
+    return pd.DataFrame(records)
 
 
-if __name__ == '__main__':
-    df = generate_loan_data()
-    print(df.head(10))
+if __name__ == "__main__":
+    df = generate_loan_data(5000)
+    print(df.head())
     print(f"\nShape: {df.shape}")
-    print(f"Censored: {(df['event_default'] == 0).sum()} ({(df['event_default'] == 0).mean()*100:.1f}%)")
-    print(f"Defaults: {(df['event_default'] == 1).sum()}")
+    print(f"Censor rate: {(df['event_default'] == 0).mean():.1%}")
+    print(df.describe())

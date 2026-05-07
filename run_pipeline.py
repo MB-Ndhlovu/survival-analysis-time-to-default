@@ -1,123 +1,127 @@
-"""Execute full survival analysis pipeline."""
-
+"""
+Execute full survival analysis pipeline.
+"""
 import json
-import sys
+import pandas as pd
 from src.data_loader import generate_loan_data
-from src.kaplan_meier import fit_kaplan_meier_by_band, compute_survival_probabilities, get_credit_score_band
-from src.cox_ph import fit_cox_ph_model, interpret_coefficients
-from src.chiizer import run_risk_chiizer, print_chiizer_summary
-from src.predict_survival import train_survival_model, predict_survival_for_applicant
+from src.kaplan_meier import fit_kaplan_meier, compute_median_times, survival_at_months, plot_km_curves, CREDIT_BANDS
+from src.cox_ph import fit_cox_ph, print_cox_summary, hazard_ratios
+from src.chiizer import chiize_all_vars
+from src.predict_survival import predict_survival, print_applicant_prediction
 
 
-def run_pipeline():
-    """Run complete survival analysis pipeline."""
-    print("=" * 70)
-    print("TIME-TO-DEFAULT SURVIVAL ANALYSIS")
-    print("=" * 70)
+def main():
+    print("=" * 60)
+    print("PROJECT 6: TIME-TO-DEFAULT SURVIVAL ANALYSIS")
+    print("=" * 60)
 
-    # Step 1: Load/generate data
-    print("\n[1/5] Generating loan data (5000 records)...")
-    df = generate_loan_data()
-    print(f"  Generated {len(df)} records")
-    print(f"  Defaults: {df['event_default'].sum()} ({df['event_default'].mean()*100:.1f}%)")
-    print(f"  Censored: {(df['event_default']==0).sum()} ({(df['event_default']==0).mean()*100:.1f}%)")
+    # 1. Load/generate data
+    print("\n[1] Generating loan data (n=5000, 35% censored at 24 months)...")
+    df = generate_loan_data(n=5000, censor_at=24)
+    print(f"    Shape: {df.shape}")
+    print(f"    Censored: {(df['event_default'] == 0).mean():.1%}")
+    print(f"    Defaulted: {(df['event_default'] == 1).mean():.1%}")
 
-    # Step 2: Kaplan-Meier by credit band
-    print("\n[2/5] Fitting Kaplan-Meier curves by credit score band...")
-    km_results = fit_kaplan_meier_by_band(df)
-    km_probs = compute_survival_probabilities(km_results)
+    # 2. Kaplan-Meier
+    print("\n[2] Fitting Kaplan-Meier curves by credit score band...")
+    kmf_by_band = fit_kaplan_meier(df)
 
-    print("\n  Median Survival Time by Credit Band:")
-    print("  " + "-" * 50)
-    for band in ['Very Poor (<580)', 'Fair (580-669)', 'Good (670-739)', 'Excellent (740+)']:
-        data = km_probs[band]
-        median = data['median_survival_months']
-        median_str = f"{median:.1f} months" if median else "Not reached"
-        print(f"  {band}: {median_str}")
-        print(f"    12-mo survival: {data['12_month']:.1%}, 24-mo survival: {data['24_month']:.1%}")
+    print("\n    --- Median Time to Default ---")
+    medians = compute_median_times(kmf_by_band)
+    for _, row in medians.iterrows():
+        mtd = row["median_time_to_default"]
+        val = f"{mtd:.0f} months" if mtd is not None else "> 24 months (not reached)"
+        print(f"    {row['band']}: {val}")
 
-    # Step 3: Cox PH Model
-    print("\n[3/5] Fitting Cox Proportional Hazards model...")
-    cox_results = fit_cox_ph_model(df)
-    interpret_coefficients(cox_results)
+    print("\n    --- 12/24-month Survival Probabilities ---")
+    surv_probs = survival_at_months(kmf_by_band, [12, 24])
+    for band in surv_probs["band"].unique():
+        band_data = surv_probs[surv_probs["band"] == band]
+        s12 = band_data[band_data["month"] == 12]["survival_prob"].values[0]
+        s24 = band_data[band_data["month"] == 24]["survival_prob"].values[0]
+        print(f"    {band}: 12-mo={s12:.1%}, 24-mo={s24:.1%}")
 
-    # Step 4: Risk Chiizer
-    print("\n[4/5] Running Risk Chiizer on key variables...")
-    chiizer_results = run_risk_chiizer(df)
-    print_chiizer_summary(chiizer_results)
+    # Save KM plot
+    plot_km_curves(kmf_by_band, save_path="reports/km_curves.png")
 
-    # Step 5: New Applicant Prediction
-    print("\n[5/5] Predicting survival for new applicant...")
-    model = train_survival_model(df)
+    # 3. Cox PH
+    print("\n[3] Fitting Cox Proportional Hazards model...")
+    cph = fit_cox_ph(df)
+    print_cox_summary(cph)
 
+    # 4. Risk Chiizer
+    print("\n[4] Building risk categories via chiizer...")
+    chiize_results = chiize_all_vars(df)
+
+    # 5. New applicant prediction
+    print("\n[5] Predicting survival for new applicant...")
     new_applicant = {
-        'credit_score': 720,
-        'employment_years': 5.0,
-        'debt_to_income': 0.25,
-        'loan_amount': 250000,
-        'interest_rate': 0.105,
-        'LTV_ratio': 0.70,
+        "credit_score": 680,
+        "income": 450_000,
+        "employment_years": 3.5,
+        "debt_to_income": 0.28,
+        "loan_amount": 250_000,
+        "interest_rate": 0.095,
+        "LTV_ratio": 0.72,
     }
-    prediction = predict_survival_for_applicant(model, new_applicant)
+    surv_df = predict_survival(cph, new_applicant)
+    print_applicant_prediction(new_applicant, surv_df)
 
-    print("\n  New Applicant Profile:")
-    print(f"    Credit Score: {new_applicant['credit_score']}")
-    print(f"    Employment: {new_applicant['employment_years']} years")
-    print(f"    DTI: {new_applicant['debt_to_income']:.1%}")
-    print(f"    Loan Amount: ZAR {new_applicant['loan_amount']:,}")
-    print(f"    Interest Rate: {new_applicant['interest_rate']:.2%}")
-    print(f"    LTV: {new_applicant['LTV_ratio']:.2%}")
-    print(f"\n  Prediction:")
-    print(f"    Risk Score: {prediction['risk_score']:.4f}")
-    median_str = f"{prediction['median_survival_months']:.1f} months" if prediction['median_survival_months'] else "Not reached"
-    print(f"    Median Time to Default: {median_str}")
-    print(f"    12-month Survival: {prediction['survival_function'].get(12, 0):.1%}")
-    print(f"    24-month Survival: {prediction['survival_function'].get(24, 0):.1%}")
+    # 6. Compile results JSON
+    print("\n[6] Saving results to reports/survival_results.json...")
+    hr_df = hazard_ratios(cph)
 
-    # Save results to JSON
-    results_summary = {
-        'km_median_survival': {
-            band: (km_probs[band]['median_survival_months'] if km_probs[band]['median_survival_months'] else None)
-            for band in km_probs
+    results = {
+        "data_summary": {
+            "n_loans": int(len(df)),
+            "censored_pct": float(round((df["event_default"] == 0).mean(), 4)),
+            "defaulted_pct": float(round((df["event_default"] == 1).mean(), 4)),
+            "censor_at_months": 24,
         },
-        'km_survival_probs': {
+        "median_time_to_default": {
+            row["band"]: (float(row["median_time_to_default"]) if pd.notna(row["median_time_to_default"]) and row["median_time_to_default"] is not None else None)
+            for _, row in medians.iterrows()
+        },
+        "survival_probabilities_12_24_months": {
             band: {
-                '12_month': km_probs[band]['12_month'],
-                '24_month': km_probs[band]['24_month'],
+                "12_month": float(surv_probs[(surv_probs["band"] == band) & (surv_probs["month"] == 12)]["survival_prob"].values[0]),
+                "24_month": float(surv_probs[(surv_probs["band"] == band) & (surv_probs["month"] == 24)]["survival_prob"].values[0]),
             }
-            for band in km_probs
+            for band in surv_probs["band"].unique()
         },
-        'cox_ph_concordance': cox_results['concordance_index'],
-        'cox_ph_hazard_ratios': {
-            row['feature']: row['hazard_ratio']
-            for _, row in cox_results['coefficients'].iterrows()
+        "cox_ph_hazard_ratios": {
+            idx: {
+                "hazard_ratio": float(row["hazard_ratio"]),
+                "coefficient": float(row["coefficient"]),
+                "p_value": float(row["p_value"]),
+            }
+            for idx, row in hr_df.iterrows()
         },
-        'applicant_prediction': {
-            'risk_score': float(prediction['risk_score']),
-            'median_survival_months': float(prediction['median_survival_months']) if prediction['median_survival_months'] else None,
-            '12_month_survival': float(prediction['survival_function'].get(12, 0)),
-            '24_month_survival': float(prediction['survival_function'].get(24, 0)),
-        }
+        "new_applicant_prediction": {
+            "applicant": {k: float(v) for k, v in new_applicant.items()},
+            "survival_curve": {
+                str(r["month"]): float(r["survival_prob"])
+                for _, r in surv_df.iterrows()
+            },
+            "12_month_default_prob": float(round(1 - surv_df[surv_df["month"] == 12]["survival_prob"].values[0], 4)),
+            "24_month_default_prob": float(round(1 - surv_df[surv_df["month"] == 24]["survival_prob"].values[0], 4)),
+        },
     }
 
-    output_path = '/home/workspace/Projects/survival-analysis-time-to-default/reports/survival_results.json'
-    with open(output_path, 'w') as f:
-        json.dump(results_summary, f, indent=2)
-    print(f"\n  Results saved to: {output_path}")
+    with open("reports/survival_results.json", "w") as f:
+        json.dump(results, f, indent=2)
 
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 60)
     print("PIPELINE COMPLETE")
-    print("=" * 70)
-    print("\nKey Business Insight:")
-    print("  Survival analysis reveals WHEN default is likely, not just IF.")
-    print("  Kaplan-Meier shows credit score bands diverge significantly by month 6.")
-    print("  Cox PH identifies DTI and interest rate as top risk accelerators.")
-    print("  Risk Chiizer enables segment-specific lifetime loss estimates.")
-    print("=" * 70)
+    print("=" * 60)
+    print("\nBusiness Insight:")
+    print("  Survival analysis tells you WHEN default is likely,")
+    print("  not just IF. A 10% PD in 12 months is very different")
+    print("  from 10% over 5 years.")
+    print("=" * 60)
 
-    return results_summary
+    return results
 
 
-if __name__ == '__main__':
-    results = run_pipeline()
-    sys.exit(0)
+if __name__ == "__main__":
+    main()
