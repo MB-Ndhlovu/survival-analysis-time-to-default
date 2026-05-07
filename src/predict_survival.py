@@ -1,84 +1,83 @@
 """
-Predict survival function for a new loan applicant.
+Predict survival function for a new loan applicant using Cox PH model.
 """
+
 import pandas as pd
 from lifelines import CoxPHFitter
 
 
-def predict_survival(cph: CoxPHFitter, applicant: dict, months: list = None) -> pd.DataFrame:
+def predict_survival(df: pd.DataFrame, applicant: dict, timelines=None) -> pd.DataFrame:
     """
-    Predict survival curve for a new applicant using the fitted Cox PH model.
+    Fit Cox PH on the dataset, then predict survival curve for a new applicant.
 
-    applicant: dict with keys matching COVARIATES from cox_ph.py
-    months: list of time points to predict (default: 0-36 months)
+    Parameters
+    ----------
+    df : pd.DataFrame — full loan dataset
+    applicant : dict — feature values for new applicant
+    timelines : array-like — time points at which to predict S(t)
+
+    Returns
+    -------
+    pd.DataFrame with timelines and survival probabilities
     """
-    if months is None:
-        months = list(range(0, 37))
+    features = [
+        "credit_score",
+        "income",
+        "employment_years",
+        "debt_to_income",
+        "loan_amount",
+        "interest_rate",
+        "LTV_ratio",
+    ]
 
-    # Build DataFrame for prediction
-    row = {k: [applicant.get(k, 0)] for k in cph.params_.index}
-    X = pd.DataFrame(row)
+    if timelines is None:
+        timelines = list(range(1, 61))
 
-    # Conditional survival function
-    surv_func = cph.predict_survival_function(X).T
-    surv_func.index = surv_func.index.astype(int)
+    df_model = df[features + ["time_end", "event_default"]].copy()
 
-    # Interpolate to requested months
-    result_rows = []
-    for m in months:
-        if m in surv_func.columns:
-            prob = surv_func[m].values[0]
-        else:
-            # Find closest column
-            closest = min(surv_func.columns, key=lambda x: abs(x - m))
-            prob = surv_func[closest].values[0]
-        result_rows.append({"month": m, "survival_prob": round(float(prob), 4)})
+    cph = CoxPHFitter(penalizer=0.1)
+    cph.fit(df_model, duration_col="time_end", event_col="event_default")
 
-    return pd.DataFrame(result_rows)
+    appl_df = pd.DataFrame([applicant])
+    for col in features:
+        appl_df[col] = float(applicant.get(col, df_model[col].median()))
+
+    surv = cph.predict_survival_function(appl_df, times=timelines)
+    surv_df = pd.DataFrame({"timeline": timelines, "survival_probability": surv.values.flatten()})
+
+    return surv_df
 
 
-def print_applicant_prediction(applicant: dict, surv_df: pd.DataFrame) -> None:
-    """Pretty-print a new applicant's survival prediction."""
-    print(f"\n=== New Applicant Prediction ===")
-    print(f"Credit Score: {applicant.get('credit_score', 'N/A')}")
-    print(f"Income: R{applicant.get('income', 0):,.0f}")
-    print(f"Employment Years: {applicant.get('employment_years', 0)}")
-    print(f"Debt-to-Income: {applicant.get('debt_to_income', 0):.2%}")
-    print(f"Loan Amount: R{applicant.get('loan_amount', 0):,.0f}")
-    print(f"Interest Rate: {applicant.get('interest_rate', 0):.2%}")
-    print(f"LTV Ratio: {applicant.get('LTV_ratio', 0):.2%}")
+def print_applicant_prediction(applicant: dict, surv_df: pd.DataFrame) -> str:
+    lines = ["\n" + "=" * 60]
+    lines.append("NEW APPLICANT — PREDICTED SURVIVAL CURVE")
+    lines.append("=" * 60)
+    lines.append("Applicant Features:")
+    for k, v in applicant.items():
+        lines.append(f"  {k:<22} {v}")
 
-    print("\nSurvival Probabilities:")
-    key_months = [6, 12, 18, 24, 30, 36]
-    for _, row in surv_df.iterrows():
-        if int(row["month"]) in key_months:
-            prob = float(row["survival_prob"])
-            print(f"  Month {int(row['month']):2d}: {prob:.1%}")
+    lines.append("\nSurvival Probability at Key Milestones:")
+    for t in [6, 12, 18, 24, 36, 48, 60]:
+        row = surv_df[surv_df["timeline"] == t]
+        if not row.empty:
+            lines.append(f"  S({t:>2}) = {row['survival_probability'].values[0]:.2%}")
 
-    # Default probability at key horizons
-    print("\nDefault Probabilities:")
-    for _, row in surv_df.iterrows():
-        if int(row["month"]) in key_months:
-            prob = float(row["survival_prob"])
-            print(f"  Month {int(row['month']):2d}: {1-prob:.1%}")
+    lines.append("=" * 60)
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
     from data_loader import generate_loan_data
-    from cox_ph import fit_cox_ph
 
-    df = generate_loan_data(5000)
-    cph = fit_cox_ph(df)
-
+    df = generate_loan_data()
     new_applicant = {
-        "credit_score": 680,
-        "income": 450_000,
-        "employment_years": 3.5,
+        "credit_score": 720,
+        "income": 65000,
+        "employment_years": 4.5,
         "debt_to_income": 0.28,
-        "loan_amount": 250_000,
-        "interest_rate": 0.095,
-        "LTV_ratio": 0.72,
+        "loan_amount": 25000,
+        "interest_rate": 0.11,
+        "LTV_ratio": 0.75,
     }
-
-    surv_df = predict_survival(cph, new_applicant)
-    print_applicant_prediction(new_applicant, surv_df)
+    surv_df = predict_survival(df, new_applicant)
+    print(print_applicant_prediction(new_applicant, surv_df))

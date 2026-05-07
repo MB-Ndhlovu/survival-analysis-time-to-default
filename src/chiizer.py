@@ -1,90 +1,87 @@
 """
-Risk Chiizer: bin continuous variables into risk categories and compute survival curves.
+Risk Chiizer — bin continuous variables into risk categories and compute
+survival curves for each bin to surface risk drivers.
 """
+
 import pandas as pd
-import numpy as np
 from lifelines import KaplanMeierFitter
 
 
-def bin_variable(series: pd.Series, n_bins: int = 4, method: str = "quantile") -> pd.Series:
+def bin_variable(series: pd.Series, bins: tuple, labels: tuple) -> pd.Series:
+    return pd.cut(series, bins=bins, labels=labels, include_lowest=True)
+
+
+def chiize(df: pd.DataFrame) -> dict:
     """
-    Bin a continuous variable into risk categories.
-
-    method='quantile': equal-size bins (recommended for credit scores, income)
-    method='equal': equal-width bins
+    Bin key continuous variables and compute survival statistics per bin.
     """
-    if method == "quantile":
-        return pd.qcut(series, q=n_bins, labels=False, duplicates="drop")
-    else:
-        return pd.cut(series, bins=n_bins, labels=False, include_lowest=True)
+    kmf = KaplanMeierFitter()
 
-
-def chiize(df: pd.DataFrame, var: str, n_bins: int = 4) -> dict:
-    """
-    Bin a variable, fit KM curves per bin, return results.
-
-    Returns dict with:
-    - bins_df: bin boundaries and counts
-    - kmf_by_bin: fitted KMFs per bin
-    - survival_df: survival probabilities at key months
-    """
-    binned = bin_variable(df[var], n_bins=n_bins)
-    df_work = df.copy()
-    df_work["bin"] = binned
-
-    bin_labels = sorted(df_work["bin"].dropna().unique())
-    kmf_by_bin = {}
-    bin_stats = []
-
-    for b in bin_labels:
-        mask = df_work["bin"] == b
-        sub = df_work[mask]
-        if len(sub) < 10:
-            continue
-
-        kmf = KaplanMeierFitter()
-        kmf.fit(sub["time_end"], sub["event_default"], label=f"Bin {b}")
-        kmf_by_bin[b] = kmf
-
-        # Bin boundaries
-        bin_stats.append({
-            "bin": int(b),
-            "n": len(sub),
-            f"{var}_min": sub[var].min(),
-            f"{var}_max": sub[var].max(),
-            f"{var}_mean": round(sub[var].mean(), 2),
-            "default_rate": round(sub["event_default"].mean(), 4),
-        })
-
-    return {
-        "bins_df": pd.DataFrame(bin_stats),
-        "kmf_by_bin": kmf_by_bin,
+    configs = {
+        "credit_score": {
+            "bins": [0, 580, 670, 740, 850],
+            "labels": ["Deep Subprime(<580)", "Subprime(580-669)", "Near Prime(670-739)", "Prime(740+)"],
+        },
+        "debt_to_income": {
+            "bins": [0, 0.20, 0.35, 0.50, 1.0],
+            "labels": ["Low(<20%)", "Medium(20-35%)", "High(35-50%)", "Very High(50%+)"],
+        },
+        "LTV_ratio": {
+            "bins": [0, 0.60, 0.80, 0.95, 1.5],
+            "labels": ["Low(<60%)", "Medium(60-80%)", "High(80-95%)", "Very High(95%+)"],
+        },
+        "interest_rate": {
+            "bins": [0, 0.08, 0.12, 0.18, 1.0],
+            "labels": ["Low(<8%)", "Medium(8-12%)", "High(12-18%)", "Very High(18%+)"],
+        },
     }
 
-
-def chiize_all_vars(df: pd.DataFrame) -> dict:
-    """
-    Chiize all continuous covariates.
-    """
-    vars_to_chiize = [
-        "credit_score",
-        "income",
-        "debt_to_income",
-        "loan_amount",
-        "LTV_ratio",
-    ]
-
     results = {}
-    for var in vars_to_chiize:
-        results[var] = chiize(df, var, n_bins=4)
-        print(f"\n=== {var.upper()} Risk Bins ===")
-        print(results[var]["bins_df"].to_string(index=False))
+
+    for var, cfg in configs.items():
+        results[var] = {}
+        binned = bin_variable(df[var], cfg["bins"], cfg["labels"])
+
+        for label in cfg["labels"]:
+            sub = df[binned == label]
+            if sub.empty:
+                continue
+
+            kmf.fit(sub["time_end"], sub["event_default"])
+            results[var][label] = {
+                "n": int(len(sub)),
+                "events": int(sub["event_default"].sum()),
+                "survival_12m": float(kmf.survival_function_at_times(12).values[0]),
+                "survival_24m": float(kmf.survival_function_at_times(24).values[0]),
+            }
 
     return results
+
+
+def print_chiizer_summary(results: dict) -> str:
+    lines = ["\n" + "=" * 60]
+    lines.append("RISK CHIIZER — SURVIVAL BY RISK CATEGORY")
+    lines.append("=" * 60)
+
+    for var, bins in results.items():
+        lines.append(f"\n{var.upper().replace('_', ' ')}")
+        lines.append("-" * 50)
+        lines.append(f"{'Category':<28} {'N':>6} {'Events':>7} {'S(12)':>8} {'S(24)':>8}")
+        lines.append("-" * 50)
+
+        for label, stats in bins.items():
+            lines.append(
+                f"{label:<28} {stats['n']:>6} {stats['events']:>7} "
+                f"{stats['survival_12m']:>7.1%} {stats['survival_24m']:>7.1%}"
+            )
+
+    lines.append("=" * 60)
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
     from data_loader import generate_loan_data
 
-    df = generate_loan_data(5000)
-    chiize_all_vars(df)
+    df = generate_loan_data()
+    results = chiize(df)
+    print(print_chiizer_summary(results))
