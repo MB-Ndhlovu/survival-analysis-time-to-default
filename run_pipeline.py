@@ -1,151 +1,125 @@
 """
-Full survival analysis pipeline for time-to-default modeling.
+Execute full survival analysis pipeline.
 """
+
+import os
 import json
 import sys
-import os
-import math
+import numpy as np
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Create reports directory
+os.makedirs('reports', exist_ok=True)
+os.makedirs('reports/chiizer', exist_ok=True)
 
+# Generate data
 from src.data_loader import generate_loan_data
-from src.kaplan_meier import fit_km_by_credit_band, get_credit_band
-from src.cox_ph import fit_cox_ph
-from src.chiizer import run_chiizer
-from src.predict_survival import predict_survival
+print("\n[1/5] Generating loan data...")
+df = generate_loan_data(5000)
+print(f"  Generated {len(df)} rows | {df['event_default'].sum()} defaults ({df['event_default'].mean()*100:.1f}%)")
 
+# Kaplan-Meier
+from src.kaplan_meier import fit_kaplan_meier, print_km_summary
+print("\n[2/5] Fitting Kaplan-Meier curves...")
+km_results = fit_kaplan_meier(df, plot_path='reports/km_curves.png')
+print_km_summary(km_results)
 
-def clean_for_json(obj):
-    """Recursively clean objects for JSON serialization."""
+# Cox PH
+from src.cox_ph import fit_cox_ph, print_cox_summary
+print("\n[3/5] Fitting Cox Proportional Hazards model...")
+_, cox_results = fit_cox_ph(df)
+print_cox_summary(cox_results)
+
+# Chiizer
+from src.chiizer import chiize_all_variables, print_chiizer_summary
+print("\n[4/5] Running Risk Chiizer...")
+chi_variables = ['credit_score', 'debt_to_income', 'LTV_ratio']
+chi_results = chiize_all_variables(df, chi_variables, 'reports/chiizer')
+print_chiizer_summary(chi_results)
+
+# Predict survival for new applicant
+from src.predict_survival import train_cox_model, predict_survival, print_applicant_score
+print("\n[5/5] Scoring new applicant...")
+means, stds = train_cox_model(df)
+
+new_applicant = {
+    'income': 85000,
+    'credit_score': 720,
+    'employment_years': 4,
+    'debt_to_income': 0.28,
+    'loan_amount': 180000,
+    'interest_rate': 0.072,
+    'LTV_ratio': 0.55
+}
+prediction = predict_survival(means, stds, new_applicant, df)
+print_applicant_score(prediction, new_applicant)
+
+# Compile results JSON
+def convert_types(obj):
     if isinstance(obj, dict):
-        return {k: clean_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [clean_for_json(v) for v in obj]
-    elif isinstance(obj, float):
-        if math.isinf(obj) or math.isnan(obj):
-            return None
-        return float(obj)
-    elif isinstance(obj, int):
+        return {k: convert_types(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_types(x) for x in obj]
+    elif isinstance(obj, np.integer):
         return int(obj)
-    elif hasattr(obj, 'item'):  # numpy types
-        return clean_for_json(obj.item())
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
     else:
         return obj
 
-
-def run_pipeline():
-    print("=" * 60)
-    print("TIME-TO-DEFAULT SURVIVAL ANALYSIS PIPELINE")
-    print("=" * 60)
-
-    # 1. Load data
-    print("\n[1/5] Generating loan data (5000 observations)...")
-    df = generate_loan_data()
-    print(f"  - Shape: {df.shape}")
-    print(f"  - Default rate: {df['event_default'].mean():.1%}")
-    print(f"  - Censored rate: {(df['event_default'] == 0).mean():.1%}")
-
-    # 2. Kaplan-Meier by credit band
-    print("\n[2/5] Fitting Kaplan-Meier curves by credit score band...")
-    km_results = fit_km_by_credit_band(df)
-    print("  - Saved: reports/km_survival_curves.png")
-
-    # 3. Cox PH model
-    print("\n[3/5] Fitting Cox Proportional Hazards model...")
-    cph, coefs = fit_cox_ph(df)
-
-    # 4. Risk Chiizer
-    print("\n[4/5] Running Risk Chiizer...")
-    chiizer_results = run_chiizer(df)
-
-    # 5. Predict for new applicant
-    print("\n[5/5] Predicting survival for new applicant...")
-    new_applicant = {'credit_score': 680, 'debt_to_income': 0.28, 'LTV_ratio': 0.45}
-    predictions = predict_survival(df, new_applicant)
-
-    # Build results dicts with full cleaning
-    km_summary = {}
-    for band, r in km_results.items():
-        ms = r['median_survival_months']
-        km_summary[band] = {
-            'n_obs': clean_for_json(r['n_obs']),
-            'n_events': clean_for_json(r['n_events']),
-            'median_survival_months': clean_for_json(ms),
-            'survival_12m': clean_for_json(r['survival_12m']),
-            'survival_24m': clean_for_json(r['survival_24m']),
-        }
-
-    hr_summary = {}
-    for feat, row in coefs.iterrows():
-        hr_summary[feat] = {
-            'coefficient': clean_for_json(row['coefficient']),
-            'hazard_ratio': clean_for_json(row['hazard_ratio']),
-            'p_value': clean_for_json(row['p_value']),
-        }
-
-    chiizer_summary = {}
-    for var, res in chiizer_results.items():
-        chiizer_summary[var] = {}
-        for bin_label, stats in res.items():
-            chiizer_summary[var][bin_label] = clean_for_json(stats)
-
-    predictions_clean = clean_for_json(predictions)
-
-    pipeline_results = {
-        'km_by_credit_band': km_summary,
-        'cox_ph_hazard_ratios': hr_summary,
-        'chiizer_results': chiizer_summary,
-        'new_applicant_predictions': predictions_clean,
-        'new_applicant_features': new_applicant,
-        'data_summary': {
-            'n_total': clean_for_json(len(df)),
-            'default_rate': clean_for_json(df['event_default'].mean()),
-            'censored_rate': clean_for_json((df['event_default'] == 0).mean()),
+results = {
+    'data_summary': {
+        'total_observations': int(len(df)),
+        'defaults': int(df['event_default'].sum()),
+        'censored': int((df['event_default']==0).sum()),
+        'censoring_rate': float(df['event_default'].mean())
+    },
+    'kaplan_meier': {},
+    'cox_ph': {
+        'hazard_ratios': {k: float(v) for k, v in cox_results['hazard_ratios'].items()},
+        'concordance_index': float(cox_results['concordance_index']) if cox_results.get('concordance_index') else None
+    },
+    'chiizer': chi_results,
+    'new_applicant': {
+        'features': new_applicant,
+        'prediction': {
+            '12m_survival': float(prediction['12m_survival']),
+            '24m_survival': float(prediction['24m_survival']),
+            'expected_months': float(prediction['expected_months'])
         }
     }
+}
 
-    # Save results
-    os.makedirs('reports', exist_ok=True)
-    with open('reports/survival_results.json', 'w') as f:
-        json.dump(pipeline_results, f, indent=2)
+for band, r in km_results.items():
+    median_val = r['median_survival']
+    if median_val == float('inf'):
+        median_val = None
+    results['kaplan_meier'][band] = {
+        'n': int(r['n']),
+        'events': int(r['events']),
+        'median_survival': float(median_val) if median_val is not None else None,
+        '12m_survival': float(r['12m_survival']),
+        '24m_survival': float(r['24m_survival'])
+    }
 
-    print("\n" + "=" * 60)
-    print("PIPELINE COMPLETE")
-    print("=" * 60)
-    print("\nKey Results:")
-    print("  KM Curves: reports/km_survival_curves.png")
-    print("  Full results: reports/survival_results.json")
+results = convert_types(results)
 
-    # Summary strings
-    summary_lines = []
-    summary_lines.append("KM Median Survival by Band:")
-    for band in ['< 580 (Deep Subprime)', '580-669 (Subprime)', '670-739 (Near Prime)', '740+ (Prime)']:
-        m = km_summary[band]['median_survival_months']
-        s12 = km_summary[band]['survival_12m']
-        s24 = km_summary[band]['survival_24m']
-        ms_str = f"{m:.1f}m" if m is not None else "N/A (50% still surviving)"
-        summary_lines.append(f"  {band}: median={ms_str}, 12m={s12:.3f}, 24m={s24:.3f}")
+with open('reports/survival_results.json', 'w') as f:
+    json.dump(results, f, indent=2)
 
-    top_risk_factors = sorted(hr_summary.items(), key=lambda x: -x[1]['hazard_ratio'])[:3]
-    summary_lines.append("\nTop 3 Risk Factors (by HR):")
-    for feat, vals in top_risk_factors:
-        summary_lines.append(f"  {feat}: HR={vals['hazard_ratio']:.3f}")
+print("\n" + "="*60)
+print("PIPELINE COMPLETE")
+print("="*60)
+print("  Reports: reports/survival_results.json")
+print("  Plots:   reports/km_curves.png, reports/chiizer/")
+print("="*60)
 
-    summary_lines.append(f"\nNew applicant (score=680, DTI=0.28, LTV=0.45):")
-    summary_lines.append(f"  12m survival: {predictions['survival_12m']:.3f}")
-    summary_lines.append(f"  24m survival: {predictions['survival_24m']:.3f}")
-    med = predictions['median_survival']
-    if med is None or (isinstance(med, float) and (math.isinf(med) or math.isnan(med))):
-        summary_lines.append(f"  Median: >36m (majority haven't defaulted)")
-    else:
-        summary_lines.append(f"  Median: {med:.1f}m")
+# Print final summary for Telegram
+summary = f"""Survival Analysis Pipeline Summary:
+- 5,000 loans | {df['event_default'].sum()} defaults | {df['event_default'].mean()*100:.1f}% default rate
+- KM Median Survival: <580={km_results['<580']['median_survival']:.0f}mo, 740+={km_results['740+']['median_survival']:.0f}mo
+- Top Hazard Factor: debt_to_income (HR={cox_results['hazard_ratios'].get('debt_to_income', 'N/A'):.2f})
+- New Applicant 12m Survival: {prediction['12m_survival']*100:.1f}%"""
 
-    telegram_summary = "\n".join(summary_lines)
-    print("\n--- Summary ---")
-    print(telegram_summary)
-
-    return pipeline_results, telegram_summary
-
-
-if __name__ == "__main__":
-    results, summary = run_pipeline()
+print(summary)
