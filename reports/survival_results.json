@@ -1,158 +1,240 @@
 {
   "data_summary": {
-    "total_observations": 5000,
-    "defaults": 1885,
-    "censored": 3115,
-    "censoring_rate": 0.377
+    "n_loans": 5000,
+    "n_defaults": 3191,
+    "n_censored": 1809,
+    "censoring_rate": 0.3618
   },
-  "kaplan_meier": {
-    "<580": {
+  "kaplan_meier_by_band": {
+    "< 580 (Poor)": {
       "n": 516,
-      "events": 308,
-      "median_survival": 19.0,
-      "12m_survival": 0.6531007751937984,
-      "24m_survival": 0.4069767441860464
+      "defaults": 348,
+      "censored": 168,
+      "12m_survival": 0.4767,
+      "24m_survival": 0.3527,
+      "median_survival_months": 12.0
     },
-    "580-669": {
+    "580-669 (Fair)": {
       "n": 1707,
-      "events": 830,
-      "median_survival": null,
-      "12m_survival": 0.7070884592852957,
-      "24m_survival": 0.5161101347393088
+      "defaults": 1083,
+      "censored": 624,
+      "12m_survival": 0.5226,
+      "24m_survival": 0.4066,
+      "median_survival_months": 14.0
     },
-    "670-739": {
+    "670-739 (Good)": {
       "n": 1661,
-      "events": 532,
-      "median_survival": null,
-      "12m_survival": 0.8145695364238408,
-      "24m_survival": 0.683925346177002
+      "defaults": 1022,
+      "censored": 639,
+      "12m_survival": 0.5719,
+      "24m_survival": 0.4533,
+      "median_survival_months": 18.0
     },
-    "740+": {
-      "n": 1039,
-      "events": 203,
-      "median_survival": null,
-      "12m_survival": 0.895091434071222,
-      "24m_survival": 0.8075072184793068
+    "740+ (Excellent)": {
+      "n": 1116,
+      "defaults": 738,
+      "censored": 378,
+      "12m_survival": 0.6004,
+      "24m_survival": 0.4606,
+      "median_survival_months": 20.0
     }
   },
   "cox_ph": {
+    "concordance_index": 0.5612,
     "hazard_ratios": {
-      "income": 0.9999994043980088,
-      "credit_score": 0.9985817504782776,
-      "employment_years": 0.9999972781747967,
-      "debt_to_income": 1.6455971600238035,
-      "loan_amount": 1.0000005263382383,
-      "interest_rate": 85.14883871892441,
-      "LTV_ratio": 1.345674219845512
+      "income": 1.0215,
+      "credit_score": 0.8992,
+      "employment_years": 0.9752,
+      "debt_to_income": 1.1584,
+      "loan_amount": 0.9986,
+      "interest_rate": 0.9877,
+      "LTV_ratio": 1.1097
     },
-    "concordance_index": 0.6626169124296446
+    "coefficients": {
+      "income": 0.0213,
+      "credit_score": -0.1062,
+      "employment_years": -0.0251,
+      "debt_to_income": 0.147,
+      "loan_amount": -0.0014,
+      "interest_rate": -0.0123,
+      "LTV_ratio": 0.1041
+    },
+    "log_likelihood": -24834.6147
   },
   "chiizer": {
-    "credit_score": {
-      "Fair": {
-        "n": 1661,
-        "events": 532,
-        "12m_survival": 0.8145695364238408,
-        "24m_survival": 0.683925346177002,
-        "median_survival": Infinity
+    "credit_score": [
+      {
+        "bin": 0,
+        "label": "Q1",
+        "n": 1269,
+        "defaults": 820,
+        "12m_survival": 0.502,
+        "24m_survival": 0.3885,
+        "median_survival": 13.0
       },
-      "Poor": {
-        "n": 1707,
-        "events": 830,
-        "12m_survival": 0.7070884592852957,
-        "24m_survival": 0.5161101347393088,
-        "median_survival": Infinity
+      {
+        "bin": 1,
+        "label": "Q2",
+        "n": 1259,
+        "defaults": 793,
+        "12m_survival": 0.5417,
+        "24m_survival": 0.4154,
+        "median_survival": 15.0
       },
-      "Good": {
-        "n": 1039,
-        "events": 203,
-        "12m_survival": 0.895091434071222,
-        "24m_survival": 0.8075072184793068,
-        "median_survival": Infinity
+      {
+        "bin": 2,
+        "label": "Q3",
+        "n": 1238,
+        "defaults": 769,
+        "12m_survival": 0.5662,
+        "24m_survival": 0.4491,
+        "median_survival": 18.0
       },
-      "Very Poor": {
-        "n": 516,
-        "events": 308,
-        "12m_survival": 0.6531007751937984,
-        "24m_survival": 0.4069767441860464,
-        "median_survival": 19.0
+      {
+        "bin": 3,
+        "label": "Q4",
+        "n": 1234,
+        "defaults": 809,
+        "12m_survival": 0.5981,
+        "24m_survival": 0.4627,
+        "median_survival": 20.0
       }
-    },
-    "debt_to_income": {
-      "3": {
+    ],
+    "debt_to_income": [
+      {
+        "bin": 0,
+        "label": "Q1",
         "n": 1250,
-        "events": 531,
-        "12m_survival": 0.7504000000000002,
-        "24m_survival": 0.5776,
-        "median_survival": Infinity
+        "defaults": 771,
+        "12m_survival": 0.64,
+        "24m_survival": 0.5096,
+        "median_survival": 25.0
       },
-      "0": {
+      {
+        "bin": 1,
+        "label": "Q2",
         "n": 1250,
-        "events": 414,
-        "12m_survival": 0.8008000000000001,
-        "24m_survival": 0.6704,
-        "median_survival": Infinity
+        "defaults": 791,
+        "12m_survival": 0.5632,
+        "24m_survival": 0.4352,
+        "median_survival": 17.0
       },
-      "1": {
-        "n": 1250,
-        "events": 446,
-        "12m_survival": 0.7904000000000005,
-        "24m_survival": 0.6503999999999999,
-        "median_survival": Infinity
+      {
+        "bin": 2,
+        "label": "Q3",
+        "n": 1252,
+        "defaults": 827,
+        "12m_survival": 0.484,
+        "24m_survival": 0.3762,
+        "median_survival": 12.0
       },
-      "2": {
-        "n": 1250,
-        "events": 494,
-        "12m_survival": 0.7768000000000005,
-        "24m_survival": 0.6064000000000002,
-        "median_survival": Infinity
+      {
+        "bin": 3,
+        "label": "Q4",
+        "n": 1248,
+        "defaults": 802,
+        "12m_survival": 0.5192,
+        "24m_survival": 0.3934,
+        "median_survival": 14.0
       }
-    },
-    "LTV_ratio": {
-      "0": {
-        "n": 1250,
-        "events": 329,
-        "12m_survival": 0.8592000000000005,
-        "24m_survival": 0.7376000000000004,
-        "median_survival": Infinity
+    ],
+    "LTV_ratio": [
+      {
+        "bin": 0,
+        "label": "Q1",
+        "n": 1251,
+        "defaults": 783,
+        "12m_survival": 0.5995,
+        "24m_survival": 0.4756,
+        "median_survival": 21.0
       },
-      "3": {
-        "n": 1250,
-        "events": 664,
-        "12m_survival": 0.6672000000000002,
-        "24m_survival": 0.4728000000000003,
-        "median_survival": 22.0
+      {
+        "bin": 1,
+        "label": "Q2",
+        "n": 1249,
+        "defaults": 779,
+        "12m_survival": 0.5757,
+        "24m_survival": 0.4476,
+        "median_survival": 18.0
       },
-      "1": {
+      {
+        "bin": 2,
+        "label": "Q3",
         "n": 1250,
-        "events": 390,
-        "12m_survival": 0.8176000000000003,
-        "24m_survival": 0.6928000000000002,
-        "median_survival": Infinity
+        "defaults": 807,
+        "12m_survival": 0.5208,
+        "24m_survival": 0.4112,
+        "median_survival": 14.0
       },
-      "2": {
+      {
+        "bin": 3,
+        "label": "Q4",
         "n": 1250,
-        "events": 502,
-        "12m_survival": 0.7744,
-        "24m_survival": 0.6016000000000002,
-        "median_survival": Infinity
+        "defaults": 822,
+        "12m_survival": 0.5104,
+        "24m_survival": 0.38,
+        "median_survival": 13.0
       }
-    }
+    ],
+    "interest_rate": [
+      {
+        "bin": 0,
+        "label": "Q1",
+        "n": 1254,
+        "defaults": 836,
+        "12m_survival": 0.5742,
+        "24m_survival": 0.4394,
+        "median_survival": 18.0
+      },
+      {
+        "bin": 1,
+        "label": "Q2",
+        "n": 1247,
+        "defaults": 771,
+        "12m_survival": 0.563,
+        "24m_survival": 0.4467,
+        "median_survival": 18.0
+      },
+      {
+        "bin": 2,
+        "label": "Q3",
+        "n": 1253,
+        "defaults": 805,
+        "12m_survival": 0.5299,
+        "24m_survival": 0.4062,
+        "median_survival": 15.0
+      },
+      {
+        "bin": 3,
+        "label": "Q4",
+        "n": 1246,
+        "defaults": 779,
+        "12m_survival": 0.5393,
+        "24m_survival": 0.4222,
+        "median_survival": 15.0
+      }
+    ]
   },
-  "new_applicant": {
-    "features": {
+  "new_applicant_prediction": {
+    "applicant": {
       "income": 85000,
-      "credit_score": 720,
-      "employment_years": 4,
+      "credit_score": 670,
+      "employment_years": 3.5,
       "debt_to_income": 0.28,
-      "loan_amount": 180000,
-      "interest_rate": 0.072,
-      "LTV_ratio": 0.55
+      "loan_amount": 450000,
+      "interest_rate": 0.105,
+      "LTV_ratio": 0.72
     },
-    "prediction": {
-      "12m_survival": 0.8520000000000006,
-      "24m_survival": 0.704,
-      "expected_months": 0.8430833333333335
-    }
+    "cox_ph_survival": {
+      "month_6": 0.7083,
+      "month_12": 0.5594,
+      "month_18": 0.4852,
+      "month_24": 0.4358,
+      "month_36": 0.2124,
+      "month_48": 0.1013,
+      "month_60": 0.0153
+    },
+    "n_similar": 250,
+    "linear_predictor": 0.0
   }
 }
