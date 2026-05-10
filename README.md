@@ -1,74 +1,90 @@
 # Time-to-Default Survival Analysis
 
 ## Overview
-This project applies survival analysis techniques to credit risk modeling, specifically analyzing **time-to-default** for loans. Unlike binary default classifiers that only predict *if* default occurs, survival analysis reveals **when** default is likely — enabling better risk pricing and capital reserving.
+
+This project applies survival analysis techniques to credit risk modeling, specifically to model **time-to-default** for loans. Unlike binary classification models that only predict *whether* a borrower will default, survival analysis predicts *when* default is likely to occur — enabling better risk pricing and proactive intervention.
 
 ## Survival Analysis Concepts
 
 ### What is Survival Analysis?
-Survival analysis models the time until an event occurs (e.g., loan default, equipment failure, customer churn). It handles two key complexities that traditional regression cannot:
 
-1. **Censoring**: Some observations haven't experienced the event by the end of the observation period. Simply dropping them loses information. Survival models incorporate censored data correctly.
+Survival analysis is a family of statistical methods for analyzing time-to-event data. Key concepts:
 
-2. **Non-Normal Time Distribution**: Time-to-event data is often skewed and bounded at zero. Survival models don't assume normality.
+- **Survival Function S(t)**: The probability that an event (e.g., default) has NOT occurred by time `t`. `S(t) = P(T > t)`
+- **Hazard Function h(t)**: The instantaneous rate of event occurrence at time `t`, given survival up to `t`
+- **Censoring**: When a loan is prepaid, paid off, or the observation window closes before default occurs — these observations are "censored" rather than having an observed event
 
-### Key Concepts
+### Kaplan-Meier Estimator
 
-| Concept | Description |
-|---------|-------------|
-| **Survival Function S(t)** | Probability that the event has NOT occurred by time t |
-| **Hazard Function h(t)** | Instantaneous rate of event occurrence at time t |
-| **Kaplan-Meier Estimator** | Non-parametric estimate of S(t) from censored data |
-| **Cox Proportional Hazards** | Semi-parametric model relating covariates to hazard |
-| **Hazard Ratio** | Relative hazard comparing two groups (HR>1 = higher risk) |
-| **Median Survival Time** | Time at which S(t) = 0.5 |
+Non-parametric estimator of the survival function. Handles right-censoring natively. Produces step functions that drop at each observed event time.
 
-### Censoring in This Dataset
-~35% of loans are **right-censored** at 24 months — they haven't defaulted by observation end but may default later. Treating them as "no default" would understate risk; survival analysis accounts for this.
+### Cox Proportional Hazards Model
 
-## Business Application: Credit Risk
+Semi-parametric regression model for survival data:
 
-### Why Survival Analysis for Lending?
-- **Risk Pricing**: A 12-month survival curve tells you default probability by month, enabling risk-based pricing
-- **Expected Loss (EL)**: EL = PD × LGD × EAD, but PD varies over loan life — survival curves give month-by-month PD
-- **Capital Reserve**: Regulatory capital (Basel III) benefits from precise loss timing
-- **Early Warning**: Identify borrowers trending toward default before it happens
+```
+h(t) = h₀(t) × exp(β₁X₁ + β₂X₂ + ...)
+```
 
-### Credit Score Bands Analyzed
-- **< 580**: Subprime — high risk
-- **580-669**: Near-prime — elevated risk
-- **670-739**: Prime — moderate risk
-- **740+**: Super-prime — low risk
+Assumes covariates have multiplicative effect on the hazard that is constant over time (proportional hazards assumption).
+
+## Business Application in Credit Risk
+
+### Why Survival Analysis for Credit?
+
+Traditional default models treat all defaulted loans equally, regardless of when default occurred. Survival analysis adds the **time dimension**:
+
+| Model Type | Answers |
+|------------|---------|
+| Binary Classification | Will this borrower default? (Yes/No) |
+| Survival Analysis | When is default most likely? What % survive past 12 months? |
+
+### Practical Applications
+
+1. **Risk-Based Pricing**: Loans with worse survival curves get higher rates
+2. **Provisioning**: Expected loss = Σ (survival_probability × exposure_at_time × LGD)
+3. **Early Warning Systems**: Identify borrowers whose survival curve drops sharply at specific months
+4. **Portfolio Monitoring**: Track how segment-level survival curves shift over time
+
+### Credit Score Bands
+
+We segment borrowers into standard credit score bands:
+
+- **Deep Subprime**: Score < 580
+- **Subprime**: 580–669
+- **Near Prime**: 670–739
+- **Prime**: 740+
+
+Higher scores → better survival curves (lower default hazard).
 
 ## Files
 
 ```
-survival-analysis-time-to-default/
 ├── README.md
 ├── requirements.txt
+├── run_pipeline.py          # Execute full pipeline
 ├── src/
 │   ├── __init__.py
-│   ├── data_loader.py      # Generate synthetic loan data
-│   ├── kaplan_meier.py     # Kaplan-Meier curves by segment
-│   ├── cox_ph.py           # Cox Proportional Hazards model
-│   ├── chiizer.py          # Risk chiizer — binning + curves
-│   └── predict_survival.py # Predict survival for new applicant
-├── run_pipeline.py         # Execute full analysis pipeline
+│   ├── data_loader.py       # Generate synthetic loan data
+│   ├── kaplan_meier.py       # Kaplan-Meier curves by segment
+│   ├── cox_ph.py             # Cox PH regression model
+│   ├── chiizer.py            # Risk chiizer — bin continuous vars
+│   └── predict_survival.py   # Predict survival for new applicant
 └── reports/
-    └── survival_results.json
+    └── survival_results.json # JSON output of key metrics
+```
+
+## Usage
+
+```bash
+pip install -r requirements.txt
+python run_pipeline.py
 ```
 
 ## Key Outputs
 
-1. **Kaplan-Meier Survival Curves** by credit score band
-2. **Median Time-to-Default** — time at which 50% of loans in each band have defaulted
-3. **Cox PH Coefficients** — which factors (income, DTI, LTV) drive default risk most
-4. **12/24-Month Survival Probabilities** by segment
-5. **Predicted Survival Curve** for a new loan applicant
-
-## The Core Insight
-
-> Binary default models answer: *"Will this loan default?"*
-> Survival analysis answers: *"When will this loan default, and what's the probability over time?"*
-
-This temporal dimension is critical for pricing, reserves, and early intervention.
+- Kaplan-Meier survival curves by credit score band
+- Median time to default for each segment
+- Cox PH coefficients and hazard ratios
+- 12-month and 24-month survival probabilities by segment
+- Predicted survival curve for a new loan applicant

@@ -1,101 +1,121 @@
 """
 Cox Proportional Hazards model for time-to-default.
+Fit Cox PH, interpret coefficients, compute hazard ratios,
+and assess which factors most increase default risk.
 """
 
+import json
 import numpy as np
 import pandas as pd
 from lifelines import CoxPHFitter
 
+from .data_loader import get_credit_score_band
 
-def fit_cox_ph(df: pd.DataFrame, time_col: str = 'time_end',
-               event_col: str = 'event_default') -> CoxPHFitter:
+
+def fit_cox_ph(df):
     """
-    Fit Cox Proportional Hazards model to loan data.
+    Fit Cox Proportional Hazards model on loan covariates.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Loan data
-    time_col : str
-        Column containing time to event or censoring
-    event_col : str
-        Column containing event indicator
+        Loan data with time_end, event_default, and covariate columns.
 
     Returns
     -------
-    CoxPHFitter
-        Fitted Cox PH model
+    CoxPHFitter, pd.DataFrame
+        Fitted model and summary DataFrame.
     """
-    features = ['income', 'credit_score', 'employment_years', 'debt_to_income',
-                'loan_amount', 'interest_rate', 'LTV_ratio']
+    covariates = [
+        "credit_score", "income", "employment_years",
+        "debt_to_income", "loan_amount", "interest_rate", "LTV_ratio"
+    ]
 
-    model_df = df[[time_col, event_col] + features].copy()
+    # Log-transform income and loan_amount (highly skewed)
+    X = df[covariates].copy()
+    X["log_income"] = np.log1p(X["income"])
+    X["log_loan_amount"] = np.log1p(X["loan_amount"])
+    X = X.drop(columns=["income", "loan_amount"])
 
-    # Log-transform wide-range variables
-    model_df['log_income'] = np.log(model_df['income'])
-    model_df['log_loan_amount'] = np.log(model_df['loan_amount'])
-    model_df = model_df.drop(columns=['income', 'loan_amount'])
-    model_df = model_df.rename(columns={'log_income': 'income', 'log_loan_amount': 'loan_amount'})
+    # Add duration and event columns
+    X["time_end"] = df["time_end"].values
+    X["event_default"] = df["event_default"].values
+
+    # Standardize for better convergence
+    for col in ["credit_score", "employment_years", "debt_to_income",
+                "interest_rate", "LTV_ratio", "log_income", "log_loan_amount"]:
+        X[col] = (X[col] - X[col].mean()) / X[col].std()
+
+    duration = X["time_end"]
+    event = X["event_default"]
 
     cph = CoxPHFitter()
-    cph.fit(model_df, duration_col=time_col, event_col=event_col)
+    cph.fit(X, duration_col="time_end", event_col="event_default")
 
-    return cph
+    X_train = X.drop(columns=["time_end", "event_default"])
+    return cph, X_train
 
 
-def print_cox_summary(cph: CoxPHFitter):
+def print_cox_summary(cph):
     """Print formatted Cox PH summary."""
-    print("\n=== Cox Proportional Hazards Model ===\n")
-    cph.print_summary()
+    print("\n" + "=" * 70)
+    print("COX PROPORTIONAL HAZARDS MODEL".center(70))
+    print("=" * 70)
+    print(cph.print_summary(decimals=4))
+    print("\nHazard Ratio Interpretation:")
+    print("  HR > 1  → increases default hazard")
+    print("  HR < 1  → decreases default hazard")
+    print("  HR = 1  → no effect")
 
+
+def get_hazard_ratios(cph):
+    """
+    Extract hazard ratios and confidence intervals from fitted model.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with covariate, coef, exp_coef (HR), se, ci_lower, ci_upper
+    """
     summary = cph.summary.copy()
-    summary['hazard_ratio'] = np.exp(summary['coef'])
-
-    print("\n=== Hazard Ratios (HR > 1 means higher default risk) ===\n")
-    for idx, row in summary.iterrows():
-        var = idx
-        hr = row['hazard_ratio']
-        ci_lower = np.exp(row['coef lower 95%'])
-        ci_upper = np.exp(row['coef upper 95%'])
-        pval = row['p']
-
-        sig = ''
-        if pval < 0.001:
-            sig = '***'
-        elif pval < 0.01:
-            sig = '**'
-        elif pval < 0.05:
-            sig = '*'
-
-        print(f"{var:20s}: HR = {hr:.4f}  [{ci_lower:.4f}, {ci_upper:.4f}]  p = {pval:.4f} {sig}")
-
-    print("\nInterpretation:")
-    print("- HR > 1: Increases default hazard (higher risk)")
-    print("- HR < 1: Decreases default hazard (lower risk)")
-    print("- HR = 1: No effect")
-    print("- Significance: *** p<0.001, ** p<0.01, * p<0.05")
-
-
-def get_hazard_ratios(cph: CoxPHFitter) -> pd.DataFrame:
-    """Extract hazard ratios with confidence intervals."""
-    summary = cph.summary.copy()
-    hr_df = pd.DataFrame({
-        'coefficient': summary['coef'],
-        'hazard_ratio': np.exp(summary['coef']),
-        'ci_lower': np.exp(summary['coef lower 95%']),
-        'ci_upper': np.exp(summary['coef upper 95%']),
-        'p_value': summary['p']
+    summary = summary.rename(columns={
+        "coef": "coefficient",
+        "exp(coef)": "hazard_ratio",
+        "se(coef)": "std_error",
+        "coef lower 95%": "ci_lower",
+        "coef upper 95%": "ci_upper",
+        "exp(coef) lower 95%": "hr_ci_lower",
+        "exp(coef) upper 95%": "hr_ci_upper",
+        "p": "p_value"
     })
-    return hr_df
+    return summary
 
 
-def main(df: pd.DataFrame):
-    cph = fit_cox_ph(df)
-    print_cox_summary(cph)
-    return cph
+def top_hazard_factors(cph, n=5):
+    """Return top N factors that most increase default hazard (by HR)."""
+    hr = get_hazard_ratios(cph)
+    hr = hr.sort_values("hazard_ratio", ascending=False)
+    return hr.head(n)
 
 
-if __name__ == '__main__':
-    from data_loader import generate_loan_data
+def export_cox_json(cph, path):
+    """Export Cox PH results to JSON."""
+    hr = get_hazard_ratios(cph)
+    records = hr.reset_index().rename(columns={"index": "covariate"}).to_dict("records")
+    for r in records:
+        for k, v in r.items():
+            if isinstance(v, (np.floating, float, np.integer)):
+                r[k] = round(float(v), 6)
+    with open(path, "w") as f:
+        json.dump({"hazard_ratios": records, "concordance_index": round(float(cph.concordance_index_), 4)}, f, indent=2)
+    print(f"Exported Cox PH results to {path}")
+
+
+if __name__ == "__main__":
+    from .data_loader import generate_loan_data
+
     df = generate_loan_data()
-    main(df)
+    cph, X = fit_cox_ph(df)
+    print_cox_summary(cph)
+    print("\nTop hazard factors:")
+    print(top_hazard_factors(cph))

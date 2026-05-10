@@ -1,0 +1,30 @@
+{
+  "Deep Subprime (<580)": {
+    "n": 1419,
+    "events": 1280,
+    "median_survival_months": 6.0,
+    "survival_12_month": 0.2636,
+    "survival_24_month": 0.098
+  },
+  "Subprime (580-669)": {
+    "n": 1415,
+    "events": 825,
+    "median_survival_months": 19.0,
+    "survival_12_month": 0.6184,
+    "survival_24_month": 0.417
+  },
+  "Near Prime (670-739)": {
+    "n": 1077,
+    "events": 472,
+    "median_survival_months": null,
+    "survival_12_month": 0.7391,
+    "survival_24_month": 0.5617
+  },
+  "Prime (740+)": {
+    "n": 1089,
+    "events": 372,
+    "median_survival_months": null,
+    "survival_12_month": 0.8108,
+    "survival_24_month": 0.6584
+  }
+}

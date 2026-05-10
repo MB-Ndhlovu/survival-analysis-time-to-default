@@ -1,1 +1,1 @@
-"""Survival analysis module for time-to-default modeling."""
+# src package
