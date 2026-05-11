@@ -1,95 +1,105 @@
-"""Risk chiizer — bin continuous variables into risk categories and compare survival."""
+"""
+Risk Chiizer: bin continuous variables into risk categories,
+compute and compare survival curves for each bin.
+Helps identify which risk buckets drive default timing differences.
+"""
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from lifelines import KaplanMeierFitter
 
 
-def bin_variable(series: pd.Series, n_bins: int = 4, labels: list = None) -> pd.Series:
-    """Bin a continuous variable into quantiles."""
-    bins = pd.qcut(series, q=n_bins, duplicates="drop")
-    if labels:
-        return bins.rename(bins.name + "_bin").map(dict(zip(bins.cat.categories, labels)))
-    return bins
+BINS_DTI = {
+    "Low DTI (≤20%)":  (0.0,  0.20),
+    "Mid DTI (20–35%)": (0.20, 0.35),
+    "High DTI (>35%)":  (0.35, 1.0),
+}
+
+BINS_LTV = {
+    "Low LTV (≤70%)":  (0.0,  0.70),
+    "Mid LTV (70–85%)": (0.70, 0.85),
+    "High LTV (>85%)":  (0.85, 1.5),
+}
+
+BINS_LOAN = {
+    "Small (≤R100k)":   (0,    100_000),
+    "Medium (100k–400k)": (100_000, 400_000),
+    "Large (>R400k)":   (400_000, 10_000_000),
+}
 
 
-def build_risk_chiizer(df: pd.DataFrame, output_path: str = "reports/risk_chiizer.png") -> dict:
+def assign_bin(value: float, bins: dict) -> str:
+    for label, (lo, hi) in bins.items():
+        if lo <= value < hi:
+            return label
+    return list(bins.keys())[-1]
+
+
+def chiize(
+    df: pd.DataFrame,
+    var_name: str,
+    bins: dict,
+    duration_col: str = "time_end",
+    event_col: str = "event_default",
+) -> dict:
     """
-    Bin continuous risk factors into categories, compute survival curves for each bin,
-    and identify which factors drive the most separation in default timing.
+    For each bin of `var_name`, fit a Kaplan-Meier curve.
+    Returns {bin_label: {"kmf": KaplanMeierFitter, "n": int}}.
     """
-    kmf = KaplanMeierFitter()
     results = {}
+    for label, (lo, hi) in bins.items():
+        mask = (df[var_name] >= lo) & (df[var_name] < hi)
+        bin_df = df[mask].copy()
 
-    variables = ["credit_score", "debt_to_income", "LTV_ratio", "interest_rate"]
-    variable_labels = {
-        "credit_score": "Credit Score",
-        "debt_to_income": "Debt-to-Income",
-        "LTV_ratio": "LTV Ratio",
-        "interest_rate": "Interest Rate",
-    }
-
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    axes = axes.flatten()
-
-    for idx, var in enumerate(variables):
-        ax = axes[idx]
-
-        # Create 4 bins
-        try:
-            binned = bin_variable(df[var], n_bins=4)
-        except ValueError:
-            # Handle duplicate bin edges
-            binned = pd.cut(df[var], bins=4)
-
-        bin_labels = sorted(binned.cat.categories.astype(str).tolist())
-        df_temp = df.copy()
-        df_temp[f"{var}_bin"] = binned.astype(str)
-
-        # Fit KM for each bin
-        for bin_val in bin_labels:
-            subset = df_temp[df_temp[f"{var}_bin"] == bin_val]
-            kmf.fit(subset["time_end"], subset["event_default"], label=bin_val)
-            kmf.plot_survival_function(ax=ax, ci_show=False)
-
-        ax.set_title(variable_labels.get(var, var))
-        ax.set_xlabel("Months")
-        ax.set_ylabel("Survival Probability")
-        ax.set_xlim(0, 30)
-        ax.legend(loc="lower left", fontsize=8)
-        ax.grid(True, alpha=0.3)
-
-        # Compute log-rank p-value for this variable
-        from lifelines.statistics import logrank_test
-        groups = df_temp[f"{var}_bin"].unique()
-        if len(groups) >= 2:
-            g1 = df_temp[df_temp[f"{var}_bin"] == groups[0]]
-            g2 = df_temp[df_temp[f"{var}_bin"] == groups[-1]]
-            try:
-                test = logrank_test(g1["time_end"], g2["time_end"],
-                                   g1["event_default"], g2["event_default"])
-                results[var] = {
-                    "logrank_p_value": round(test.p_value, 6),
-                    "significant": test.p_value < 0.05,
-                    "n_bins": len(groups),
-                }
-            except Exception:
-                results[var] = {"logrank_p_value": None, "significant": False, "n_bins": len(groups)}
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close()
+        kmf = KaplanMeierFitter()
+        kmf.fit(bin_df[duration_col], bin_df[event_col], label=label)
+        results[label] = {"kmf": kmf, "n": len(bin_df)}
 
     return results
+
+
+def plot_chiizer(
+    chiizer_results: dict,
+    title: str,
+    output_path: str,
+):
+    """Plot survival curves for each bin of a chiized variable."""
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for label, data in chiizer_results.items():
+        data["kmf"].plot_survival_function(ax=ax, ci_show=True)
+
+    ax.set_title(title, fontsize=13, fontweight="bold")
+    ax.set_xlabel("Months")
+    ax.set_ylabel("Survival Probability")
+    ax.set_ylim(0, 1.05)
+    ax.legend(loc="lower left")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.close()
+    print(f"Saved chiizer plot: {output_path}")
+
+
+def chiizer_table(
+    chiizer_results: dict, times: list
+) -> pd.DataFrame:
+    """Build summary table of S(t) at each time horizon per bin."""
+    rows = []
+    for label, data in chiizer_results.items():
+        kmf = data["kmf"]
+        row = {"bin": label, "n": data["n"]}
+        for t in times:
+            row[f"S({t}m)"] = round(kmf.survival_function_at_times(t).values[0], 4)
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":
     from data_loader import generate_loan_data
 
     df = generate_loan_data()
-    results = build_risk_chiizer(df)
-    print("\nRisk Chiizer Results (log-rank test):")
-    for var, res in results.items():
-        sig = "SIGNIFICANT" if res["significant"] else "not significant"
-        print(f"  {var}: p={res['logrank_p_value']} ({sig})")
+    for var, bins in [("debt_to_income", BINS_DTI), ("LTV_ratio", BINS_LTV)]:
+        res = chiize(df, var, bins)
+        plot_chiizer(res, f"Survival by {var}", f"chiizer_{var}.png")
+        print(chiizer_table(res, times=[12, 24]))

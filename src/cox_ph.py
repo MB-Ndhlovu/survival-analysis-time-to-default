@@ -1,71 +1,71 @@
-"""Cox Proportional Hazards model for default risk."""
+"""
+Cox Proportional Hazards model: fit Cox PH regression,
+interpret coefficients, and compute hazard ratios.
+"""
 
 import pandas as pd
 import numpy as np
 from lifelines import CoxPHFitter
 
 
-def fit_cox_ph(df: pd.DataFrame) -> dict:
+def fit_cox_ph(
+    df: pd.DataFrame,
+    duration_col: str = "time_end",
+    event_col: str = "event_default",
+) -> CoxPHFitter:
     """
-    Fit Cox Proportional Hazards model to identify factors increasing default risk.
-
-    Returns coefficients, hazard ratios, and model summary.
+    Fit a Cox PH model on loan data.
+    Uses covariates: credit_score, income, employment_years,
+    debt_to_income, loan_amount, interest_rate, LTV_ratio.
+    Returns the fitted CoxPHFitter.
     """
     cph = CoxPHFitter()
-    cph.fit(
-        df[["time_end", "event_default", "income", "credit_score", "employment_years",
-            "debt_to_income", "loan_amount", "interest_rate", "LTV_ratio"]],
-        duration_col="time_end",
-        event_col="event_default"
-    )
 
-    # Extract coefficients and hazard ratios
-    summary = cph.summary.copy()
-    hazard_ratios = np.exp(summary["coef"])
+    cov_cols = [
+        "credit_score",
+        "income",
+        "employment_years",
+        "debt_to_income",
+        "loan_amount",
+        "interest_rate",
+        "LTV_ratio",
+    ]
 
-    results = {
-        "log_likelihood": cph.log_likelihood_,
-        "concordance_index": cph.concordance_index_,
-        "partial_log_likelihood": cph.log_likelihood_,
-        "coefficients": {},
-        "hazard_ratios": {},
-        "p_values": {},
-    }
+    fit_df = df[[duration_col, event_col] + cov_cols].copy()
+    cph.fit(fit_df, duration_col=duration_col, event_col=event_col)
+    return cph
 
-    for var in summary.index:
-        results["coefficients"][var] = round(summary.loc[var, "coef"], 4)
-        results["hazard_ratios"][var] = round(hazard_ratios.loc[var], 4)
-        results["p_values"][var] = round(summary.loc[var, "p"], 4)
 
-    # Print formatted results
-    print("\n" + "=" * 60)
-    print("COX PROPORTIONAL HAZARDS MODEL RESULTS")
-    print("=" * 60)
-    print(f"Concordance Index: {results['concordance_index']:.4f}")
-    print(f"Log-Likelihood: {results['log_likelihood']:.2f}")
-    print("\nHazard Ratios (effect on instantaneous default rate):")
-    print("-" * 50)
-    print(f"{'Variable':<20} {'HR':>8} {'Coef':>8} {'p-value':>8}")
-    print("-" * 50)
+def summary_table(cph: CoxPHFitter) -> pd.DataFrame:
+    """
+    Return a nicely formatted summary table of Cox PH coefficients
+    with hazard ratios, confidence intervals, and p-values.
+    """
+    s = cph.summary.copy()
+    # lifelines uses these column names
+    s = s.rename(columns={
+        "coef":                      "coefficient",
+        "exp(coef)":                 "hazard_ratio",
+        "se(coef)":                  "std_error",
+        "exp(coef) lower 95%":       "hr_lower",
+        "exp(coef) upper 95%":       "hr_upper",
+        "p":                         "p_value",
+    })
+    s.index.name = "covariate"
+    s = s.sort_values("hazard_ratio", ascending=False)
+    s["significant"] = s["p_value"] < 0.05
 
-    for var in sorted(results["hazard_ratios"].keys()):
-        hr = results["hazard_ratios"][var]
-        coef = results["coefficients"][var]
-        p = results["p_values"][var]
-        sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
-        print(f"{var:<20} {hr:>8.3f} {coef:>8.4f} {p:>8.4f} {sig}")
-
-    print("\nInterpretation:")
-    print("  HR > 1: Factor increases default risk")
-    print("  HR < 1: Factor decreases default risk")
-    print("  HR = 1: No effect")
-    print("  Significance: *** p<0.001, ** p<0.01, * p<0.05")
-
-    return results
+    return s[[
+        "coefficient", "hazard_ratio", "std_error",
+        "hr_lower", "hr_upper", "p_value", "significant"
+    ]]
 
 
 if __name__ == "__main__":
     from data_loader import generate_loan_data
 
     df = generate_loan_data()
-    results = fit_cox_ph(df)
+    cph = fit_cox_ph(df)
+    print(summary_table(cph).to_string())
+    print()
+    cph.print_summary()
