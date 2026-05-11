@@ -1,240 +1,212 @@
 {
-  "data_summary": {
-    "n_loans": 5000,
-    "n_defaults": 3191,
-    "n_censored": 1809,
-    "censoring_rate": 0.3618
-  },
-  "kaplan_meier_by_band": {
-    "< 580 (Poor)": {
-      "n": 516,
-      "defaults": 348,
-      "censored": 168,
-      "12m_survival": 0.4767,
-      "24m_survival": 0.3527,
-      "median_survival_months": 12.0
+  "pipeline": "Time-to-Default Survival Analysis",
+  "n_samples": 5000,
+  "n_defaults": 1108,
+  "censoring_rate": 0.7784,
+  "concordance_index": 0.6531,
+  "km_curves_by_band": {
+    "Poor (<580)": {
+      "n_at_risk": 750,
+      "n_defaults": 297,
+      "median_time_months": Infinity,
+      "survival_12mo": 0.7272,
+      "survival_24mo": 0.5303
     },
-    "580-669 (Fair)": {
-      "n": 1707,
-      "defaults": 1083,
-      "censored": 624,
-      "12m_survival": 0.5226,
-      "24m_survival": 0.4066,
-      "median_survival_months": 14.0
+    "Fair (580-669)": {
+      "n_at_risk": 1000,
+      "n_defaults": 298,
+      "median_time_months": Infinity,
+      "survival_12mo": 0.8084,
+      "survival_24mo": 0.6648
     },
-    "670-739 (Good)": {
-      "n": 1661,
-      "defaults": 1022,
-      "censored": 639,
-      "12m_survival": 0.5719,
-      "24m_survival": 0.4533,
-      "median_survival_months": 18.0
+    "Good (670-739)": {
+      "n_at_risk": 1500,
+      "n_defaults": 306,
+      "median_time_months": Infinity,
+      "survival_12mo": 0.8886,
+      "survival_24mo": 0.7837
     },
-    "740+ (Excellent)": {
-      "n": 1116,
-      "defaults": 738,
-      "censored": 378,
-      "12m_survival": 0.6004,
-      "24m_survival": 0.4606,
-      "median_survival_months": 20.0
+    "Excellent (740+)": {
+      "n_at_risk": 1750,
+      "n_defaults": 207,
+      "median_time_months": Infinity,
+      "survival_12mo": 0.934,
+      "survival_24mo": 0.8782
     }
   },
-  "cox_ph": {
-    "concordance_index": 0.5612,
-    "hazard_ratios": {
-      "income": 1.0215,
-      "credit_score": 0.8992,
-      "employment_years": 0.9752,
-      "debt_to_income": 1.1584,
-      "loan_amount": 0.9986,
-      "interest_rate": 0.9877,
-      "LTV_ratio": 1.1097
+  "cox_hazard_ratios": {
+    "income_100k": {
+      "coefficient": -0.0481,
+      "hazard_ratio": 0.953,
+      "hr_lower_95": 0.8187,
+      "hr_upper_95": 1.1094,
+      "p_value": 0.5347
     },
-    "coefficients": {
-      "income": 0.0213,
-      "credit_score": -0.1062,
-      "employment_years": -0.0251,
-      "debt_to_income": 0.147,
-      "loan_amount": -0.0014,
-      "interest_rate": -0.0123,
-      "LTV_ratio": 0.1041
+    "credit_score_z": {
+      "coefficient": -0.3233,
+      "hazard_ratio": 0.0,
+      "hr_lower_95": 0.6544,
+      "hr_upper_95": 0.8004,
+      "p_value": 0.0
     },
-    "log_likelihood": -24834.6147
+    "employment_years": {
+      "coefficient": 0.0085,
+      "hazard_ratio": 1.0085,
+      "hr_lower_95": 0.9948,
+      "hr_upper_95": 1.0224,
+      "p_value": 0.225
+    },
+    "debt_to_income": {
+      "coefficient": -0.5689,
+      "hazard_ratio": 0.5661,
+      "hr_lower_95": 0.2934,
+      "hr_upper_95": 1.0926,
+      "p_value": 0.0899
+    },
+    "loan_amount_m": {
+      "coefficient": -0.148,
+      "hazard_ratio": 0.8624,
+      "hr_lower_95": 0.6769,
+      "hr_upper_95": 1.0987,
+      "p_value": 0.231
+    },
+    "interest_rate": {
+      "coefficient": 7.8165,
+      "hazard_ratio": 2481.2805,
+      "hr_lower_95": 22.8967,
+      "hr_upper_95": 268892.9421,
+      "p_value": 0.0011
+    },
+    "LTV_ratio": {
+      "coefficient": 0.1909,
+      "hazard_ratio": 1.2103,
+      "hr_lower_95": 0.8299,
+      "hr_upper_95": 1.7649,
+      "p_value": 0.3214
+    }
   },
-  "chiizer": {
-    "credit_score": [
-      {
-        "bin": 0,
-        "label": "Q1",
-        "n": 1269,
-        "defaults": 820,
-        "12m_survival": 0.502,
-        "24m_survival": 0.3885,
-        "median_survival": 13.0
-      },
-      {
-        "bin": 1,
-        "label": "Q2",
-        "n": 1259,
-        "defaults": 793,
-        "12m_survival": 0.5417,
-        "24m_survival": 0.4154,
-        "median_survival": 15.0
-      },
-      {
-        "bin": 2,
-        "label": "Q3",
-        "n": 1238,
-        "defaults": 769,
-        "12m_survival": 0.5662,
-        "24m_survival": 0.4491,
-        "median_survival": 18.0
-      },
-      {
-        "bin": 3,
-        "label": "Q4",
-        "n": 1234,
-        "defaults": 809,
-        "12m_survival": 0.5981,
-        "24m_survival": 0.4627,
-        "median_survival": 20.0
-      }
-    ],
+  "chiizer_summaries": {
     "debt_to_income": [
       {
-        "bin": 0,
-        "label": "Q1",
+        "bin": "Low DTI",
         "n": 1250,
-        "defaults": 771,
-        "12m_survival": 0.64,
-        "24m_survival": 0.5096,
-        "median_survival": 25.0
+        "n_defaults": 286,
+        "survival_12mo": 0.8507,
+        "survival_24mo": 0.7557
       },
       {
-        "bin": 1,
-        "label": "Q2",
+        "bin": "Med DTI",
         "n": 1250,
-        "defaults": 791,
-        "12m_survival": 0.5632,
-        "24m_survival": 0.4352,
-        "median_survival": 17.0
+        "n_defaults": 282,
+        "survival_12mo": 0.8798,
+        "survival_24mo": 0.755
       },
       {
-        "bin": 2,
-        "label": "Q3",
-        "n": 1252,
-        "defaults": 827,
-        "12m_survival": 0.484,
-        "24m_survival": 0.3762,
-        "median_survival": 12.0
+        "bin": "High DTI",
+        "n": 1250,
+        "n_defaults": 296,
+        "survival_12mo": 0.8579,
+        "survival_24mo": 0.7475
       },
       {
-        "bin": 3,
-        "label": "Q4",
-        "n": 1248,
-        "defaults": 802,
-        "12m_survival": 0.5192,
-        "24m_survival": 0.3934,
-        "median_survival": 14.0
+        "bin": "V.High DTI",
+        "n": 1250,
+        "n_defaults": 244,
+        "survival_12mo": 0.8777,
+        "survival_24mo": 0.789
       }
     ],
     "LTV_ratio": [
       {
-        "bin": 0,
-        "label": "Q1",
-        "n": 1251,
-        "defaults": 783,
-        "12m_survival": 0.5995,
-        "24m_survival": 0.4756,
-        "median_survival": 21.0
-      },
-      {
-        "bin": 1,
-        "label": "Q2",
-        "n": 1249,
-        "defaults": 779,
-        "12m_survival": 0.5757,
-        "24m_survival": 0.4476,
-        "median_survival": 18.0
-      },
-      {
-        "bin": 2,
-        "label": "Q3",
+        "bin": "Low LTV",
         "n": 1250,
-        "defaults": 807,
-        "12m_survival": 0.5208,
-        "24m_survival": 0.4112,
-        "median_survival": 14.0
+        "n_defaults": 270,
+        "survival_12mo": 0.867,
+        "survival_24mo": 0.7665
       },
       {
-        "bin": 3,
-        "label": "Q4",
+        "bin": "Med LTV",
         "n": 1250,
-        "defaults": 822,
-        "12m_survival": 0.5104,
-        "24m_survival": 0.38,
-        "median_survival": 13.0
+        "n_defaults": 277,
+        "survival_12mo": 0.8757,
+        "survival_24mo": 0.7623
+      },
+      {
+        "bin": "High LTV",
+        "n": 1250,
+        "n_defaults": 292,
+        "survival_12mo": 0.8557,
+        "survival_24mo": 0.7476
+      },
+      {
+        "bin": "V.High LTV",
+        "n": 1250,
+        "n_defaults": 269,
+        "survival_12mo": 0.8671,
+        "survival_24mo": 0.7698
       }
     ],
     "interest_rate": [
       {
-        "bin": 0,
-        "label": "Q1",
-        "n": 1254,
-        "defaults": 836,
-        "12m_survival": 0.5742,
-        "24m_survival": 0.4394,
-        "median_survival": 18.0
+        "bin": "Low Rate",
+        "n": 1250,
+        "n_defaults": 171,
+        "survival_12mo": 0.9253,
+        "survival_24mo": 0.8585
       },
       {
-        "bin": 1,
-        "label": "Q2",
-        "n": 1247,
-        "defaults": 771,
-        "12m_survival": 0.563,
-        "24m_survival": 0.4467,
-        "median_survival": 18.0
+        "bin": "Med Rate",
+        "n": 1250,
+        "n_defaults": 203,
+        "survival_12mo": 0.9083,
+        "survival_24mo": 0.8302
       },
       {
-        "bin": 2,
-        "label": "Q3",
-        "n": 1253,
-        "defaults": 805,
-        "12m_survival": 0.5299,
-        "24m_survival": 0.4062,
-        "median_survival": 15.0
+        "bin": "High Rate",
+        "n": 1250,
+        "n_defaults": 291,
+        "survival_12mo": 0.8712,
+        "survival_24mo": 0.7461
       },
       {
-        "bin": 3,
-        "label": "Q4",
-        "n": 1246,
-        "defaults": 779,
-        "12m_survival": 0.5393,
-        "24m_survival": 0.4222,
-        "median_survival": 15.0
+        "bin": "V.High Rate",
+        "n": 1250,
+        "n_defaults": 443,
+        "survival_12mo": 0.7541,
+        "survival_24mo": 0.5931
       }
     ]
   },
-  "new_applicant_prediction": {
-    "applicant": {
-      "income": 85000,
-      "credit_score": 670,
-      "employment_years": 3.5,
-      "debt_to_income": 0.28,
-      "loan_amount": 450000,
-      "interest_rate": 0.105,
-      "LTV_ratio": 0.72
+  "applicant_predictions": {
+    "High Risk (score=560, high DTI/LTV)": {
+      "income": 250000,
+      "credit_score": 560,
+      "debt_to_income": 0.45,
+      "loan_amount": 1500000,
+      "interest_rate": 0.18,
+      "LTV_ratio": 0.9,
+      "survival_12mo": 0.8074,
+      "survival_24mo": 0.6558
     },
-    "cox_ph_survival": {
-      "month_6": 0.7083,
-      "month_12": 0.5594,
-      "month_18": 0.4852,
-      "month_24": 0.4358,
-      "month_36": 0.2124,
-      "month_48": 0.1013,
-      "month_60": 0.0153
+    "Medium Risk (score=680)": {
+      "income": 600000,
+      "credit_score": 680,
+      "debt_to_income": 0.3,
+      "loan_amount": 2000000,
+      "interest_rate": 0.13,
+      "LTV_ratio": 0.75,
+      "survival_12mo": 0.9249,
+      "survival_24mo": 0.8572
     },
-    "n_similar": 250,
-    "linear_predictor": 0.0
+    "Low Risk (score=780, low DTI/LTV)": {
+      "income": 1200000,
+      "credit_score": 780,
+      "debt_to_income": 0.18,
+      "loan_amount": 1800000,
+      "interest_rate": 0.095,
+      "LTV_ratio": 0.6,
+      "survival_12mo": 0.9666,
+      "survival_24mo": 0.9351
+    }
   }
 }

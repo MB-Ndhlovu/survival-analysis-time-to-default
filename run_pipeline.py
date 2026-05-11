@@ -1,134 +1,162 @@
-"""Execute the full survival analysis pipeline."""
+"""
+Run full survival analysis pipeline:
+1. Generate loan data
+2. Fit Kaplan-Meier curves by credit band
+3. Fit Cox PH model
+4. Run risk chiizer
+5. Predict survival for new applicants
+6. Save results to reports/
+"""
 
 import json
 import sys
-from pathlib import Path
+import os
 
-# Ensure src is on path
-sys.path.insert(0, str(Path(__file__).parent))
+# Ensure src is importable
+sys.path.insert(0, os.path.dirname(__file__))
 
-from lifelines import CoxPHFitter
-import pandas as pd
+from src.data_loader import generate_loan_data
+from src.kaplan_meier import fit_kaplan_meier, print_km_summary
+from src.cox_ph import fit_cox_ph, print_cox_summary
+from src.chiizer import chiize_all_variables, print_chiizer_summary
+from src.predict_survival import simulate_applicant_survival, print_applicant_summary
 
-from src.data_loader import load_data
-from src.kaplan_meier import fit_kaplan_meier
-from src.cox_ph import fit_cox_ph
-from src.chiizer import run_chiizer
-from src.predict_survival import predict_survival_for_applicant
+
+def serialize_for_json(obj):
+    """Convert non-serializable objects for JSON output."""
+    if isinstance(obj, float):
+        if obj != obj:  # NaN check
+            return None
+        return round(obj, 6)
+    if hasattr(obj, '__float__'):
+        return round(float(obj), 6)
+    return str(obj)
 
 
 def run_pipeline():
-    print("=" * 60)
+    """Execute full survival analysis pipeline."""
+    print("=" * 80)
     print("TIME-TO-DEFAULT SURVIVAL ANALYSIS PIPELINE")
-    print("=" * 60)
+    print("=" * 80)
 
-    # --- Load data ---
-    print("\n[1/5] Loading loan data...")
-    df = load_data()
-    n = len(df)
-    n_default = int(df["event_default"].sum())
-    n_censored = n - n_default
-    print(f"  Loans: {n} | Defaults: {n_default} | Censored: {n_censored} ({n_censored/n:.1%})")
+    # 1. Load/generate data
+    print("\n[1/5] Generating synthetic loan data (n=5000)...")
+    df = generate_loan_data(n_samples=5000)
+    print(f"  -> {len(df)} loans generated")
+    print(f"  -> {df['event_default'].eq(1).sum()} defaults observed "
+          f"({df['event_default'].eq(1).mean():.1%})")
+    print(f"  -> {df['event_default'].eq(0).sum()} censored "
+          f"({df['event_default'].eq(0).mean():.1%})")
 
-    # --- Kaplan-Meier ---
-    print("\n[2/5] Fitting Kaplan-Meier curves by credit band...")
+    # 2. Kaplan-Meier by credit band
+    print("\n[2/5] Fitting Kaplan-Meier curves by credit score band...")
     km_results = fit_kaplan_meier(df)
-    print("  Kaplan-Meier curves saved to reports/km_curves.png")
-    for band, stats in km_results.items():
-        print(f"\n  {band}")
-        print(f"    n={stats['n']}, defaults={stats['defaults']}, censored={stats['censored']}")
-        print(f"    12m survival: {stats['12m_survival']:.2%}")
-        print(f"    24m survival: {stats['24m_survival']:.2%}")
-        print(f"    median survival: {stats['median_survival_months']}")
+    print_km_summary(km_results)
 
-    # --- Cox PH ---
+    # 3. Cox PH model
     print("\n[3/5] Fitting Cox Proportional Hazards model...")
     cox_results = fit_cox_ph(df)
-    print(f"  Concordance Index: {cox_results['concordance_index']}")
-    print("  Hazard Ratios:")
-    for cov, hr in sorted(
-        cox_results["hazard_ratios"].items(), key=lambda x: x[1], reverse=True
-    ):
-        arrow = "▲" if hr > 1 else "▼"
-        print(f"    {arrow} {cov}: HR={hr}")
+    print_cox_summary(cox_results)
 
-    # --- Risk Chiizer ---
-    print("\n[4/5] Running Risk Chiizer on continuous variables...")
-    chi_results = run_chiizer(df)
-    for var, res in chi_results.items():
-        print(f"\n  {var}:")
-        for row in res:
-            print(f"    {row['label']}: n={row['n']}, 12m={row['12m_survival']:.2%}, "
-                  f"24m={row['24m_survival']:.2%}, median={row['median_survival']}")
+    # 4. Risk Chiizer
+    print("\n[4/5] Running risk chiizer on key variables...")
+    chiizer_results = chiize_all_variables(df)
+    print_chiizer_summary(chiizer_results)
 
-    # --- Prediction ---
-    print("\n[5/5] Predicting survival for new applicant...")
-    cph = CoxPHFitter()
-    features = [
-        "income", "credit_score", "employment_years",
-        "debt_to_income", "loan_amount", "interest_rate", "LTV_ratio",
-    ]
-    X = df[features].copy()
-    X_scaled = (X - X.mean()) / X.std()
-    cph.fit(
-        pd.concat([df["time_end"], df["event_default"]], axis=1).rename(
-            columns={"time_end": "duration", "event_default": "event"}
-        ),
-        duration_col="duration",
-        event_col="event",
-    )
+    # 5. New applicant predictions
+    print("\n[5/5] Predicting survival for new applicants...")
+    applicant_results = simulate_applicant_survival(df, cox_results['cph'])
+    print_applicant_summary(applicant_results)
 
-    new_applicant = {
-        "income": 85_000,
-        "credit_score": 670,
-        "employment_years": 3.5,
-        "debt_to_income": 0.28,
-        "loan_amount": 450_000,
-        "interest_rate": 0.105,
-        "LTV_ratio": 0.72,
-    }
-    pred = predict_survival_for_applicant(cph, new_applicant, df)
-    print(f"  Applicant: credit_score={new_applicant['credit_score']}, "
-          f"DTI={new_applicant['debt_to_income']}, LTV={new_applicant['LTV_ratio']}")
-    print(f"  Similar applicants in data: {pred['n_similar_applicants']}")
-    print("  Cox PH survival predictions:")
-    for month, prob in pred["cox_ph_predictions"].items():
-        print(f"    {month}: {prob:.2%}")
+    # Save results to JSON
+    print("\n" + "=" * 80)
+    print("SAVING RESULTS")
+    print("=" * 80)
 
-    # --- Save results ---
-    output = {
-        "data_summary": {
-            "n_loans": n,
-            "n_defaults": n_default,
-            "n_censored": n_censored,
-            "censoring_rate": round(n_censored / n, 4),
-        },
-        "kaplan_meier_by_band": km_results,
-        "cox_ph": {
-            k: v for k, v in cox_results.items() if k != "p_values"
-        },
-        "chiizer": chi_results,
-        "new_applicant_prediction": {
-            "applicant": new_applicant,
-            "cox_ph_survival": pred["cox_ph_predictions"],
-            "n_similar": pred["n_similar_applicants"],
-            "linear_predictor": pred["linear_predictor"],
-        },
+    # Build serializable results dict
+    summary_results = {
+        "pipeline": "Time-to-Default Survival Analysis",
+        "n_samples": len(df),
+        "n_defaults": int(df['event_default'].sum()),
+        "censoring_rate": round(df['event_default'].eq(0).mean(), 4),
+        "concordance_index": round(cox_results['concordance'], 4),
+        "km_curves_by_band": {},
+        "cox_hazard_ratios": {},
+        "chiizer_summaries": {},
+        "applicant_predictions": {}
     }
 
-    out_path = Path(__file__).parent / "reports" / "survival_results.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump(output, f, indent=2, default=str)
+    # KM by band
+    band_order = ["Poor (<580)", "Fair (580-669)", "Good (670-739)", "Excellent (740+)"]
+    for band in band_order:
+        if band in km_results:
+            r = km_results[band]
+            mt = r['median_time']
+            if not isinstance(mt, str):
+                mt = round(float(mt), 2)
+            summary_results["km_curves_by_band"][band] = {
+                "n_at_risk": int(r['n_at_risk']),
+                "n_defaults": int(r['n_events']),
+                "median_time_months": mt,
+                "survival_12mo": round(float(r['survival_12mo']), 4),
+                "survival_24mo": round(float(r['survival_24mo']), 4)
+            }
 
-    print(f"\n[Done] Results saved to {out_path}")
-    print("\n" + "=" * 60)
-    print("KEY INSIGHT: Survival analysis reveals WHEN default is likely,")
-    print("not just IF. A 580-669 borrower has ~50% chance of defaulting")
-    print("by month 24, vs 740+ borrowers holding >80% survival.")
-    print("=" * 60)
+    # Cox HR
+    summary_df = cox_results['summary']
+    for var in summary_df.index:
+        row = summary_df.loc[var]
+        summary_results["cox_hazard_ratios"][var] = {
+            "coefficient": round(float(row['coef']), 4),
+            "hazard_ratio": round(float(row['hazard_ratio']), 4),
+            "hr_lower_95": round(float(row['hr_lower']), 4),
+            "hr_upper_95": round(float(row['hr_upper']), 4),
+            "p_value": round(float(row['p']), 4)
+        }
 
-    return output
+    # Chiizer
+    for var, chi_df in chiizer_results.items():
+        rows = []
+        for _, row in chi_df.iterrows():
+            rows.append({
+                "bin": str(row['bin']),
+                "n": int(row['n']),
+                "n_defaults": int(row['n_defaults']),
+                "survival_12mo": round(float(row['survival_12mo']), 4),
+                "survival_24mo": round(float(row['survival_24mo']), 4)
+            })
+        summary_results["chiizer_summaries"][var] = rows
+
+    # Applicant predictions
+    for label, data in applicant_results.items():
+        profile = data['profile']
+        summary_results["applicant_predictions"][label] = {
+            "income": profile['income'],
+            "credit_score": profile['credit_score'],
+            "debt_to_income": round(profile['debt_to_income'], 4),
+            "loan_amount": profile['loan_amount'],
+            "interest_rate": round(profile['interest_rate'], 4),
+            "LTV_ratio": round(profile['LTV_ratio'], 4),
+            "survival_12mo": round(float(data['survival_12mo']), 4),
+            "survival_24mo": round(float(data['survival_24mo']), 4)
+        }
+
+    # Write JSON
+    os.makedirs("reports", exist_ok=True)
+    with open("reports/survival_results.json", "w") as f:
+        json.dump(summary_results, f, indent=2)
+    print("  -> reports/survival_results.json saved")
+
+    print("\n" + "=" * 80)
+    print("PIPELINE COMPLETE")
+    print("=" * 80)
+    print("\nOutputs:")
+    print("  - reports/km_survival_curves.png     (Kaplan-Meier by credit band)")
+    print("  - reports/chiizer_*.png              (Risk chiizer plots)")
+    print("  - reports/*_risk.png                 (Applicant survival curves)")
+    print("  - reports/survival_results.json     (Full results JSON)")
+
+    return summary_results
 
 
 if __name__ == "__main__":
