@@ -1,189 +1,95 @@
-"""
-Risk Chiizer: bin continuous variables into risk categories.
+"""Risk chiizer — bin continuous variables into risk categories and compare survival."""
 
-Transforms continuous risk factors into discretized survival curves.
-This creates interpretable risk stratification from raw covariates.
-
-For each variable, bins the data and computes Kaplan-Meier curves per bin.
-"""
-
-import numpy as np
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 from lifelines import KaplanMeierFitter
 
 
 def bin_variable(series: pd.Series, n_bins: int = 4, labels: list = None) -> pd.Series:
+    """Bin a continuous variable into quantiles."""
+    bins = pd.qcut(series, q=n_bins, duplicates="drop")
+    if labels:
+        return bins.rename(bins.name + "_bin").map(dict(zip(bins.cat.categories, labels)))
+    return bins
+
+
+def build_risk_chiizer(df: pd.DataFrame, output_path: str = "reports/risk_chiizer.png") -> dict:
     """
-    Discretize a continuous variable into bins with optional labels.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Continuous variable to bin.
-    n_bins : int
-        Number of quantile bins.
-    labels : list, optional
-        Custom bin labels.
-
-    Returns
-    -------
-    pd.Series
-        Discretized bin labels.
+    Bin continuous risk factors into categories, compute survival curves for each bin,
+    and identify which factors drive the most separation in default timing.
     """
-    if labels is None:
-        labels = [f"Q{i+1}" for i in range(n_bins)]
-
-    # Use qcut for equal-frequency bins (fail-safe on duplicates)
-    try:
-        binned = pd.qcut(series, q=n_bins, labels=labels, duplicates='drop')
-    except ValueError:
-        # Fallback to cut with equal width
-        binned = pd.cut(series, bins=n_bins, labels=labels[:n_bins])
-
-    return binned
-
-
-def chiize_variable(df: pd.DataFrame, var_name: str, n_bins: int = 4,
-                   labels: list = None, color_map: dict = None) -> pd.DataFrame:
-    """
-    Compute survival curves for each bin of a variable.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Loan data with time_end, event_default, and the variable column.
-    var_name : str
-        Name of the continuous variable to chiize.
-    n_bins : int
-        Number of bins.
-    labels : list, optional
-        Bin labels.
-    color_map : dict, optional
-        Mapping of bin labels to colors.
-
-    Returns
-    -------
-    pd.DataFrame
-        Summary stats per bin with survival probabilities.
-    """
-    if var_name not in df.columns:
-        raise ValueError(f"Variable '{var_name}' not in DataFrame")
-
-    df = df.copy()
-    df['bin'] = bin_variable(df[var_name], n_bins, labels)
-
     kmf = KaplanMeierFitter()
+    results = {}
 
-    results_rows = []
-    fig, ax = plt.subplots(figsize=(9, 5))
+    variables = ["credit_score", "debt_to_income", "LTV_ratio", "interest_rate"]
+    variable_labels = {
+        "credit_score": "Credit Score",
+        "debt_to_income": "Debt-to-Income",
+        "LTV_ratio": "LTV Ratio",
+        "interest_rate": "Interest Rate",
+    }
 
-    if color_map is None:
-        cmap = plt.cm.viridis
-        colors = {label: cmap(i / max(n_bins - 1, 1)) for i, label in enumerate(labels or [f"Q{i+1}" for i in range(n_bins)])}
-    else:
-        colors = color_map
-        cmap = None
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes = axes.flatten()
 
-    for i, (bin_label, group) in enumerate(df.groupby('bin', observed=True)):
-        if len(group) < 10:
-            continue
+    for idx, var in enumerate(variables):
+        ax = axes[idx]
 
-        kmf.fit(durations=group['time_end'],
-                event_observed=group['event_default'],
-                label=str(bin_label))
+        # Create 4 bins
+        try:
+            binned = bin_variable(df[var], n_bins=4)
+        except ValueError:
+            # Handle duplicate bin edges
+            binned = pd.cut(df[var], bins=4)
 
-        surv_12 = kmf.predict(12)
-        surv_24 = kmf.predict(24)
-        median_surv = kmf.median_survival_time_
+        bin_labels = sorted(binned.cat.categories.astype(str).tolist())
+        df_temp = df.copy()
+        df_temp[f"{var}_bin"] = binned.astype(str)
 
-        results_rows.append({
-            'bin': bin_label,
-            'n': len(group),
-            'n_defaults': group['event_default'].sum(),
-            'survival_12mo': surv_12,
-            'survival_24mo': surv_24,
-            'median_time': median_surv if not pd.isna(median_surv) else ">24mo"
-        })
+        # Fit KM for each bin
+        for bin_val in bin_labels:
+            subset = df_temp[df_temp[f"{var}_bin"] == bin_val]
+            kmf.fit(subset["time_end"], subset["event_default"], label=bin_val)
+            kmf.plot_survival_function(ax=ax, ci_show=False)
 
-        if color_map:
-            color = colors.get(bin_label, '#1f77b4')
-        else:
-            color = cmap(i / max(n_bins - 1, 1))
-        kmf.plot_survival_function(ax=ax, color=[color])
+        ax.set_title(variable_labels.get(var, var))
+        ax.set_xlabel("Months")
+        ax.set_ylabel("Survival Probability")
+        ax.set_xlim(0, 30)
+        ax.legend(loc="lower left", fontsize=8)
+        ax.grid(True, alpha=0.3)
 
-    ax.set_xlabel("Months since origination", fontsize=11)
-    ax.set_ylabel("Survival Probability", fontsize=11)
-    ax.set_title(f"Survival by {var_name} Risk Categories (Risk Chiizer)", fontsize=12)
-    ax.set_ylim(0, 1.05)
-    ax.grid(True, alpha=0.3)
-    ax.legend(title=var_name, loc="lower left")
+        # Compute log-rank p-value for this variable
+        from lifelines.statistics import logrank_test
+        groups = df_temp[f"{var}_bin"].unique()
+        if len(groups) >= 2:
+            g1 = df_temp[df_temp[f"{var}_bin"] == groups[0]]
+            g2 = df_temp[df_temp[f"{var}_bin"] == groups[-1]]
+            try:
+                test = logrank_test(g1["time_end"], g2["time_end"],
+                                   g1["event_default"], g2["event_default"])
+                results[var] = {
+                    "logrank_p_value": round(test.p_value, 6),
+                    "significant": test.p_value < 0.05,
+                    "n_bins": len(groups),
+                }
+            except Exception:
+                results[var] = {"logrank_p_value": None, "significant": False, "n_bins": len(groups)}
 
     plt.tight_layout()
-    plt.savefig(f"reports/chiizer_{var_name.replace('/', '_')}.png", dpi=150)
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
 
-    return pd.DataFrame(results_rows)
-
-
-def chiize_all_variables(df: pd.DataFrame) -> dict:
-    """
-    Run risk chiizer on all continuous risk variables.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Loan data with time_end, event_default, and risk covariates.
-
-    Returns
-    -------
-    dict
-        Dictionary mapping variable name to chiizer summary DataFrame.
-    """
-    variables = ['debt_to_income', 'LTV_ratio', 'interest_rate']
-    labels = {
-        'debt_to_income': ['Low DTI', 'Med DTI', 'High DTI', 'V.High DTI'],
-        'LTV_ratio': ['Low LTV', 'Med LTV', 'High LTV', 'V.High LTV'],
-        'interest_rate': ['Low Rate', 'Med Rate', 'High Rate', 'V.High Rate']
-    }
-
-    color_maps = {
-        'debt_to_income': {'Low DTI': '#2ca02c', 'Med DTI': '#1f77b4',
-                           'High DTI': '#ff7f0e', 'V.High DTI': '#d62728'},
-        'LTV_ratio': {'Low LTV': '#2ca02c', 'Med LTV': '#1f77b4',
-                      'High LTV': '#ff7f0e', 'V.High LTV': '#d62728'},
-        'interest_rate': {'Low Rate': '#2ca02c', 'Med Rate': '#1f77b4',
-                          'High Rate': '#ff7f0e', 'V.High Rate': '#d62728'}
-    }
-
-    results = {}
-    for var in variables:
-        results[var] = chiize_variable(df, var, n_bins=4, labels=labels[var],
-                                       color_map=color_maps[var])
-
     return results
-
-
-def print_chiizer_summary(results: dict) -> None:
-    """Print risk chiizer summary for all variables."""
-    print("\n" + "=" * 80)
-    print("RISK CHIIZER: SURVIVAL BY RISK CATEGORIES")
-    print("=" * 80)
-
-    for var, df_result in results.items():
-        print(f"\n{var.upper().replace('_', ' ')}")
-        print("-" * 60)
-        print(f"{'Bin':<15} {'N':>6} {'Defaults':>8} {'12mo Surv':>10} {'24mo Surv':>10}")
-        print("-" * 60)
-        for _, row in df_result.iterrows():
-            print(f"{str(row['bin']):<15} {row['n']:>6} {int(row['n_defaults']):>8} "
-                  f"{row['survival_12mo']:>10.1%} {row['survival_24mo']:>10.1%}")
-    print("=" * 80)
 
 
 if __name__ == "__main__":
     from data_loader import generate_loan_data
 
     df = generate_loan_data()
-    results = chiize_all_variables(df)
-    print_chiizer_summary(results)
+    results = build_risk_chiizer(df)
+    print("\nRisk Chiizer Results (log-rank test):")
+    for var, res in results.items():
+        sig = "SIGNIFICANT" if res["significant"] else "not significant"
+        print(f"  {var}: p={res['logrank_p_value']} ({sig})")
