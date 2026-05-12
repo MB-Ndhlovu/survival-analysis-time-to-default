@@ -1,73 +1,105 @@
-"""Risk Chiizer: bin continuous variables into risk categories and compare survival."""
+"""Risk chiizer — bin continuous variables into risk categories and compare survival."""
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from lifelines import KaplanMeierFitter
 
-def bin_variable(series, bins=5):
-    """Bin a continuous variable into quantile-based categories."""
-    try:
-        bin_edges = pd.qcut(series, q=bins, retbins=True, duplicates='drop')[1]
-        actual_bins = len(bin_edges) - 1
-    except ValueError:
-        actual_bins = bins
-    labels = [f'Q{i+1}' for i in range(actual_bins)]
-    return pd.qcut(series, q=bins, labels=labels, duplicates='drop')
-
-def chiize(df, variable, n_bins=5, event_col='event_default', duration_col='time_end'):
+def chiize(df, variable, n_bins=4, labels=None):
     """
-    Bin a continuous variable and compute survival curves for each bin.
-    Returns dict of {bin_label: {'kmf': KM fitter, 'survival_at_12': float, ...}}
-    """
-    df = df.copy()
-    df['bin'] = bin_variable(df[variable], bins=n_bins)
+    Bin a continuous variable into risk categories and compute survival curves.
 
-    results = {}
-    for bin_label in sorted(df['bin'].unique()):
-        band_df = df[df['bin'] == bin_label]
-        if len(band_df) < 10:
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Data from data_loader.py
+    variable : str
+        Column name to bin
+    n_bins : int
+        Number of bins
+    labels : list or None
+        Custom bin labels
+
+    Returns
+    -------
+    dict
+        Bin boundaries, survival statistics, and Kaplan-Meier fitters
+    """
+    if labels is None:
+        labels = [f'Q{i+1}' for i in range(n_bins)]
+
+    # Create quantile-based bins
+    df_temp = df.copy()
+    df_temp['bin'] = pd.qcut(df_temp[variable], q=n_bins, labels=labels, duplicates='drop')
+
+    results = {
+        'variable': variable,
+        'bins': {},
+        'overall_default_rate': float(df['event_default'].mean()),
+    }
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    kmf_global = KaplanMeierFitter()
+    kmf_global.fit(df['time_end'], df['event_default'], label='All Borrowers')
+
+    for label in labels:
+        mask = df_temp['bin'] == label
+        if mask.sum() == 0:
             continue
+        df_bin = df_temp[mask]
         kmf = KaplanMeierFitter()
-        kmf.fit(band_df[duration_col], band_df[event_col], label=str(bin_label))
-        results[bin_label] = {
+        kmf.fit(df_bin['time_end'], df_bin['event_default'], label=label)
+
+        # Survival at key horizons
+        surv_12 = kmf.survival_function_.loc[12.0, label] if 12.0 in kmf.survival_function_.index else None
+        surv_24 = kmf.survival_function_.loc[24.0, label] if 24.0 in kmf.survival_function_.index else None
+        median = kmf.median_survival_time_
+        if pd.isna(median):
+            median = "> 24mo"
+
+        results['bins'][label] = {
+            'n': int(mask.sum()),
+            'default_rate': float(df_bin['event_default'].mean()),
+            'survival_12': float(surv_12) if surv_12 is not None else None,
+            'survival_24': float(surv_24) if surv_24 is not None else None,
+            'median_survival': median,
             'kmf': kmf,
-            'n': len(band_df),
-            'median': kmf.median_survival_time_,
-            's12': kmf.survival_function_at_times(12).values[0],
-            's24': kmf.survival_function_at_times(24).values[0],
         }
 
-    return results
+        kmf.plot_survival_function(ax=ax, ci_show=True)
 
-def plot_chiizer_results(results, variable_name, save_path=None):
-    """Plot survival curves for each bin of a variable."""
-    fig, ax = plt.subplots(figsize=(10, 6))
+    kmf_global.plot_survival_function(ax=ax, ci_show=False, linestyle='--', linewidth=2)
 
-    colors = plt.cm.viridis(np.linspace(0, 1, len(results)))
-    for (label, res), color in zip(results.items(), colors):
-        kmf = res['kmf']
-        ax.plot(kmf.survival_function_.index, kmf.survival_function_.iloc[:, 0],
-                label=f"{label} (n={res['n']})", color=color, linewidth=2)
-
-    ax.set_xlabel('Months Since Origination', fontsize=12)
-    ax.set_ylabel('Survival Probability', fontsize=12)
-    ax.set_title(f'Survival by {variable_name} Risk Category', fontsize=14)
-    ax.legend(loc='lower left', fontsize=10)
-    ax.set_ylim(0, 1.05)
+    ax.set_xlabel('Months since loan origination')
+    ax.set_ylabel('Survival Probability')
+    ax.set_title(f'Survival Curves by {variable} Risk Categories')
+    ax.legend(loc='lower left')
     ax.grid(True, alpha=0.3)
 
-    if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.tight_layout()
+    safe_name = variable.replace(' ', '_').replace('/', '_')
+    plt.savefig(f'/home/workspace/Projects/survival-analysis-time-to-default/reports/chiizer_{safe_name}.png', dpi=150)
+    plt.close()
 
-    return fig
-
-def chiizer_summary(results, variable_name):
-    """Print a summary table for chiizer results."""
-    print(f"\n=== Risk Chiizer: {variable_name} ===")
-    print(f"{'Bin':<10} {'n':>6} {'S(12)':>8} {'S(24)':>8} {'Median':>10}")
-    print("-" * 45)
-    for label, res in results.items():
-        median_str = f"{res['median']:.1f}m" if not np.isinf(res['median']) else "NR"
-        print(f"{label:<10} {res['n']:>6} {res['s12']:>8.1%} {res['s24']:>8.1%} {median_str:>10}")
     return results
+
+def run_full_chiizer(df):
+    """Run chiizer on key credit risk variables."""
+    variables = ['credit_score', 'debt_to_income', 'LTV_ratio', 'interest_rate']
+    all_results = {}
+
+    for var in variables:
+        results = chiize(df, var)
+        all_results[var] = results
+
+    return all_results
+
+if __name__ == '__main__':
+    from data_loader import generate_loan_data
+    df = generate_loan_data()
+    results = run_full_chiizer(df)
+    for var, res in results.items():
+        print(f"\n=== {var} ===")
+        for bin_label, bin_data in res['bins'].items():
+            print(f"  {bin_label}: n={bin_data['n']}, default_rate={bin_data['default_rate']:.3f}, "
+                  f"12-mo survival={bin_data['survival_12']:.4f if bin_data['survival_12'] else 'N/A'}")

@@ -6,54 +6,68 @@ from lifelines import CoxPHFitter
 
 def fit_cox_ph(df):
     """
-    Fit Cox PH model on loan features.
-    Returns fitted model and a results DataFrame.
+    Fit Cox PH model and return coefficients with hazard ratios.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Data from data_loader.py
+
+    Returns
+    -------
+    dict
+        Model coefficients, hazard ratios, and interpretation
     """
-    # Prepare features
-    features = ['income', 'credit_score', 'employment_years', 'debt_to_income',
-                'loan_amount', 'interest_rate', 'LTV_ratio']
+    # Prepare features — drop non-features
+    feature_cols = ['income', 'credit_score', 'employment_years',
+                    'debt_to_income', 'loan_amount', 'interest_rate', 'LTV_ratio']
 
-    X = df[features + ['time_end', 'event_default']].copy()
+    df_model = df[feature_cols + ['time_end', 'event_default']].copy()
 
-    # Standardize for numerical stability
-    for col in features:
-        X[col] = (X[col] - X[col].mean()) / X[col].std()
-
-    # Add log-transformed loan_amount
-    X['log_loan_amount'] = np.log(df['loan_amount'] + 1)
-
-    duration_col = 'time_end'
-    event_col = 'event_default'
+    # Standardize for model stability
+    for col in feature_cols:
+        df_model[col] = (df_model[col] - df_model[col].mean()) / df_model[col].std()
 
     cph = CoxPHFitter()
-    cph.fit(X, duration_col=duration_col, event_col=event_col)
+    cph.fit(df_model, duration_col='time_end', event_col='event_default')
 
-    return cph
+    # Extract coefficients
+    coef_df = cph.summary[['coef', 'exp(coef)', 'se(coef)', 'p']].copy()
+    coef_df.columns = ['coefficient', 'hazard_ratio', 'std_error', 'p_value']
 
-def print_cox_summary(cph):
-    """Print formatted Cox PH results."""
-    print("\n=== Cox Proportional Hazards Model ===")
-    print(cph.print_summary(decimals=4))
+    # Interpret coefficients
+    interpretations = {}
+    for var in feature_cols:
+        hr = coef_df.loc[var, 'hazard_ratio']
+        p = coef_df.loc[var, 'p_value']
+        direction = "increases" if hr > 1 else "decreases"
+        interpretations[var] = {
+            'hazard_ratio': round(hr, 4),
+            'p_value': round(p, 4),
+            'significant': p < 0.05,
+            'interpretation': (
+                f"A 1 SD increase in {var} {direction} default risk by "
+                f"{abs(hr - 1) * 100:.1f}% (HR={hr:.3f})"
+            )
+        }
 
-    # Extract key metrics
-    summary = cph.summary.copy()
-    summary['hazard_ratio'] = np.exp(summary['coef'])
-    summary['hr_lower'] = np.exp(summary['coef lower 95%'])
-    summary['hr_upper'] = np.exp(summary['coef upper 95%'])
+    results = {
+        'concordance_index': round(cph.concordance_index_, 4),
+        'coefficients': coef_df.to_dict(),
+        'interpretations': interpretations,
+        'log_likelihood': round(cph.log_likelihood_, 4),
+    }
 
-    print("\n=== Hazard Ratios (per 1-SD increase) ===")
-    for idx, row in summary.iterrows():
-        var = idx
-        hr = row['hazard_ratio']
-        ci = f"[{row['hr_lower']:.3f}, {row['hr_upper']:.3f}]"
-        p = row['p']
-        sig = '***' if p < 0.001 else ('**' if p < 0.01 else ('*' if p < 0.05 else ''))
-        print(f"  {var:25s} HR = {hr:.4f}  95% CI: {ci:20s}  p = {p:.4f} {sig}")
+    return results
 
-    return summary
-
-def top_risk_factors(summary, n=5):
-    """Return top n risk factors by hazard ratio magnitude."""
-    summary['abs_hr_minus_1'] = np.abs(summary['hazard_ratio'] - 1)
-    top = summary.sort_values('abs_hr_minus_1', ascending=False).head(n)
-    return top[['coef', 'hazard_ratio', 'p']]
+if __name__ == '__main__':
+    from data_loader import generate_loan_data
+    df = generate_loan_data()
+    results = fit_cox_ph(df)
+    print(f"C-index: {results['concordance_index']}")
+    print("\nHazard Ratios (sorted by significance):")
+    sorted_vars = sorted(results['interpretations'].items(),
+                        key=lambda x: x[1]['p_value'])
+    for var, info in sorted_vars:
+        sig = "***" if info['p_value'] < 0.001 else "**" if info['p_value'] < 0.01 else "*" if info['p_value'] < 0.05 else ""
+        print(f"  {var}: HR={info['hazard_ratio']:.4f} p={info['p_value']:.4f} {sig}")

@@ -1,77 +1,55 @@
 # Time-to-Default Survival Analysis
 
-Credit risk modeling goes beyond binary default prediction. This project applies **survival analysis** to loan data to model *when* a borrower is likely to default — not just *if*. The key output is a survival curve: given a new applicant, we estimate the probability they remain non-defaulted over time.
+## Overview
 
-## Core Concepts
+This project applies survival analysis techniques to credit risk modeling, predicting not just *whether* a loan defaults, but *when* default is most likely to occur.
 
-### Survival Function S(t)
-The probability that a borrower has *not* defaulted by time `t`:
-$$S(t) = P(T > t)$$
+## Survival Analysis Concepts
 
-### Kaplan-Meier Estimator
-Non-parametric estimator of $S(t)$ that handles censored observations:
-$$\hat{S}(t) = \prod_{t_i \leq t} \left(1 - \frac{d_i}{n_i}\right)$$
-where $d_i$ = defaults at time $t_i$, $n_i$ = borrowers at risk just before $t_i$.
+### Why Survival Analysis?
 
-### Cox Proportional Hazards Model
-Semi-parametric model for the hazard function:
-$$h(t) = h_0(t) \cdot \exp(\beta_1 X_1 + \beta_2 X_2 + ...)$$
+Traditional credit scoring models output a binary prediction: default / no default. Survival analysis goes further by modeling the **time to event**, answering:
+- What is the probability a borrower survives (doesn't default) beyond month 12? 24?
+- Which risk factors accelerate or delay default timing?
+- How does default risk change over the life of the loan?
 
-**Hazard Ratio** = $\exp(\beta)$: HR > 1 means higher default risk relative to baseline.
+### Key Terms
 
-### Censoring
-~35% of observations are right-censored at 24 months (loan paid off, still active, or lost to follow-up). Survival analysis correctly uses this partial information.
+- **Survival Function S(t)**: Probability that the event (default) has not occurred by time t
+- **Hazard Function h(t)**: Instantaneous rate of default at time t, given survival to that point
+- **Censoring**: Observations where default hasn't occurred by the observation end — treated differently in estimation
+- **Kaplan-Meier Estimator**: Non-parametric estimate of S(t) from censored data
+- **Cox Proportional Hazards**: Semi-parametric model relating covariates to hazard rate
 
-## Files
+### Business Application
 
-| File | Description |
-|------|-------------|
-| `src/data_loader.py` | Generates 5,000 synthetic loan records with survival times |
-| `src/kaplan_meier.py` | KM curves by credit score band, median survival times |
-| `src/cox_ph.py` | Cox PH model fitting, hazard ratios, coefficient interpretation |
-| `src/chiizer.py` | Risk chiizer — bin continuous variables into risk categories |
-| `src/predict_survival.py` | Predict survival curve for a new loan applicant |
-| `run_pipeline.py` | Execute full pipeline, print results, save outputs |
+In credit risk, survival analysis enables:
+- **Better pricing**: Adjust loan pricing based on expected time-to-default
+- **Provision calculations**: More accurate expected loss estimates
+- **Portfolio monitoring**: Track cohort survival curves over time
+- **Early warning systems**: Identify borrowers approaching high-risk periods
 
-## Business Insight
-
-A logistic regression tells you: *"This applicant has a 20% probability of default."*
-
-Survival analysis tells you: *"This applicant has a 94% chance of surviving 12 months, but only 71% at 24 months — watch them closely between months 12–18 when default risk peaks."*
-
-**This is the difference between IF and WHEN.**
-
-## Credit Score Bands
-
-| Band | Score Range | Risk Profile |
-|------|-------------|-------------|
-| Deep Subprime | < 580 | High risk |
-| Subprime | 580–669 | Elevated risk |
-| Near Prime | 670–739 | Moderate risk |
-| Prime | 740+ | Low risk |
-
-## Key Outputs
-
-- Kaplan-Meier survival curves stratified by credit score band
-- Median survival time (time to 50% default rate) per band
-- Cox PH coefficients — which factors drive default risk most
-- 12-month and 24-month survival probabilities by segment
-- Predicted survival curve for a new applicant
-
-## Dependencies
+## Project Structure
 
 ```
-lifelines>=0.27.0
-scikit-learn>=1.0
-pandas>=1.3
-numpy>=1.21
-matplotlib>=3.4
+.
+├── README.md
+├── requirements.txt
+├── run_pipeline.py
+├── src/
+│   ├── __init__.py
+│   ├── data_loader.py
+│   ├── kaplan_meier.py
+│   ├── cox_ph.py
+│   ├── chiizer.py
+│   └── predict_survival.py
+└── reports/
+    └── survival_results.json
 ```
 
-Install: `pip install -r requirements.txt`
-
-## Running
+## Usage
 
 ```bash
+pip install -r requirements.txt
 python run_pipeline.py
 ```
