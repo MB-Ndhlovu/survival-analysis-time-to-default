@@ -1,222 +1,95 @@
-"""
-Survival Analysis Pipeline — Time-to-Default Analysis
-======================================================
-Orchestrates the full workflow:
-1. Generate loan data
-2. Fit Kaplan-Meier curves by credit band
-3. Fit Cox PH model
-4. Run risk chiizer
-5. Predict survival for new applicant
-6. Save results and plots
-"""
+"""Execute the full survival analysis pipeline."""
 
-import os
 import json
-import warnings
-warnings.filterwarnings('ignore')
+import sys
+import os
 
-from src.data_loader import generate_loan_data, add_credit_bands
-from src.kaplan_meier import fit_by_credit_band, plot_kaplan_meier, get_summary_table as km_summary_table
-from src.cox_ph import fit_cox_ph, print_cox_results, get_hazard_ratio_table
-from src.chiizer import chiize, plot_chiizer_results
-from src.predict_survival import (
-    predict_survival_for_applicant,
-    get_applicant_risk_profile,
-    plot_applicant_survival,
-    print_applicant_profile,
-)
+# Ensure src is on path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+
+from data_loader import generate_loan_data
+from kaplan_meier import fit_km
+from cox_ph import fit_cox
+from chiizer import run_chiizer
+from predict_survival import demo_prediction
 
 
-def run_pipeline():
-    print("="*70)
+def main():
+    os.makedirs("reports", exist_ok=True)
+
+    print("=" * 60)
     print("TIME-TO-DEFAULT SURVIVAL ANALYSIS PIPELINE")
-    print("="*70)
-    
-    # Setup paths
-    project_dir = '/home/workspace/Projects/survival-analysis-time-to-default'
-    reports_dir = os.path.join(project_dir, 'reports')
-    os.makedirs(reports_dir, exist_ok=True)
-    
-    # ============================================================
-    # STEP 1: Load / Generate Data
-    # ============================================================
-    print("\n[STEP 1] Generating loan dataset (n=5000)...")
-    df = generate_loan_data(n=5000)
-    df = add_credit_bands(df)
-    
-    n_total = len(df)
-    n_censored = df['event_default'].eq(0).sum()
-    n_defaults = df['event_default'].eq(1).sum()
-    censoring_rate = n_censored / n_total
-    
-    print(f"  → {n_total} loans generated")
-    print(f"  → {n_defaults:.0f} defaults ({n_defaults/n_total:.1%})")
-    print(f"  → {n_censored:.0f} censored at 24 months ({censoring_rate:.1%})")
-    print(f"  → Credit band distribution:\n{df['credit_band'].value_counts().to_string()}")
-    
-    # ============================================================
-    # STEP 2: Kaplan-Meier Analysis
-    # ============================================================
-    print("\n[STEP 2] Fitting Kaplan-Meier survival curves by credit band...")
-    km_results = fit_by_credit_band(df)
-    
-    # Plot KM curves
-    km_plot_path = os.path.join(project_dir, 'reports', 'kaplan_meier_curves.png')
-    plot_kaplan_meier(km_results, save_path=km_plot_path)
-    
-    # Summary table
-    km_summary = km_summary_table(km_results)
-    print(f"  → Kaplan-Meier plot saved to reports/")
-    
-    # ============================================================
-    # STEP 3: Cox PH Model
-    # ============================================================
-    print("\n[STEP 3] Fitting Cox Proportional Hazards model...")
-    cph = fit_cox_ph(df)
-    
-    print_cox_results(cph)
-    
-    # Hazard ratio table
-    hr_table = get_hazard_ratio_table(cph)
-    c_index = cph.concordance_index_
-    print(f"\n  → Concordance Index: {c_index:.4f}")
-    print(f"  → A C-index of 0.65+ indicates good discriminative ability")
-    
-    # ============================================================
-    # STEP 4: Risk Chiizer
-    # ============================================================
-    print("\n[STEP 4] Running Risk Chiizer — survival by variable bins...")
-    chiizer_results = chiize(df)
-    
-    chiizer_plot_path = os.path.join(project_dir, 'reports', 'chiizer_curves.png')
-    plot_chiizer_results(chiizer_results, save_path=chiizer_plot_path)
-    print(f"  → Chiizer plot saved to reports/")
-    
-    # ============================================================
-    # STEP 5: New Applicant Prediction
-    # ============================================================
-    print("\n[STEP 5] Predicting survival for new applicant...")
-    
-    # Representative new applicant
-    applicant = {
-        'credit_score': 710,
-        'income': 650000,
-        'employment_years': 4.5,
-        'debt_to_income': 0.28,
-        'loan_amount': 800000,
-        'interest_rate': 0.095,
-        'LTV_ratio': 0.75,
+    print("=" * 60)
+
+    # 1. Load data
+    print("\n[1/5] Generating loan data (n=5000)...")
+    data = generate_loan_data(5000)
+    print(f"    Defaults: {data['event_default'].sum()} ({data['event_default'].mean():.1%})")
+    print(f"    Censored: {(data['event_default']==0).sum()} ({(data['event_default']==0).mean():.1%})")
+
+    # 2. Kaplan-Meier
+    print("\n[2/5] Fitting Kaplan-Meier curves...")
+    km_results = fit_km(data)
+    print("    Median survival by band:")
+    for band, res in km_results.items():
+        print(f"      {band}: {res['median_survival_months']} months "
+              f"(12m survival: {res['survival_12m']}, 24m: {res['survival_24m']})")
+
+    # 3. Cox PH
+    print("\n[3/5] Fitting Cox Proportional Hazards model...")
+    cph, cox_results = fit_cox(data)
+    print("    Concordance index:", cox_results["concordance_index"])
+    print("    Top hazard drivers:")
+    sorted_coef = sorted(cox_results["coefficients"].items(),
+                         key=lambda x: x[1]["hazard_ratio"], reverse=True)
+    for var, info in sorted_coef[:3]:
+        print(f"      {var}: HR={info['hazard_ratio']:.4f} (p={info['p_value']:.4f})")
+
+    # 4. Risk Chiizer
+    print("\n[4/5] Running risk chiizer...")
+    chi_results = run_chiizer(data)
+
+    # 5. Demo predictions
+    print("\n[5/5] Running new applicant predictions...")
+    pred_results = demo_prediction(cph, data)
+
+    # Compile results
+    output = {
+        "km_results": km_results,
+        "cox_results": {
+            "concordance_index": cox_results["concordance_index"],
+            "coefficients": {k: {kk: float(vv) for kk, vv in v.items()}
+                             for k, v in cox_results["coefficients"].items()},
+        },
+        "chiizer_results": chi_results,
+        "prediction_results": {k: {kk: float(vv) if isinstance(vv, (float, int)) else vv
+                                   for kk, vv in v.items()}
+                               for k, v in pred_results.items()},
+        "data_summary": {
+            "n": int(len(data)),
+            "defaults": int(data["event_default"].sum()),
+            "censored": int((data["event_default"] == 0).sum()),
+        },
     }
-    
-    # Get predicted survival curve
-    survival_df = predict_survival_for_applicant(cph, applicant)
-    
-    # Get risk profile
-    profile = get_applicant_risk_profile(applicant, km_results, cph)
-    print_applicant_profile(profile, applicant)
-    
-    # Plot applicant vs benchmarks
-    applicant_plot_path = os.path.join(project_dir, 'reports', 'applicant_survival_prediction.png')
-    plot_applicant_survival(survival_df, km_results, applicant, save_path=applicant_plot_path)
-    
-    # ============================================================
-    # STEP 6: Compile and Save Results
-    # ============================================================
-    print("\n[STEP 6] Compiling results and saving to JSON...")
-    
-    # Build results dict
-    results = {
-        'dataset_info': {
-            'n_total': int(n_total),
-            'n_defaults': int(n_defaults),
-            'n_censored': int(n_censored),
-            'censoring_rate': round(censoring_rate, 4),
-        },
-        'kaplan_meier': {
-            'summary': km_summary.to_dict(orient='records'),
-        },
-        'cox_ph': {
-            'hazard_ratios': hr_table.to_dict(orient='records'),
-            'concordance_index': round(c_index, 4),
-        },
-        'applicant_prediction': {
-            'profile': {
-                'credit_score': applicant['credit_score'],
-                'income': applicant['income'],
-                'employment_years': applicant['employment_years'],
-                'debt_to_income': applicant['debt_to_income'],
-                'loan_amount': applicant['loan_amount'],
-                'interest_rate': applicant['interest_rate'],
-                'LTV_ratio': applicant['LTV_ratio'],
-            },
-            'assigned_band': profile['assigned_band'],
-            'relative_risk_score': round(profile['relative_risk_score'], 4),
-            'survival_12m': round(profile['survival_12m'], 4),
-            'survival_24m': round(profile['survival_24m'], 4),
-        },
-        'business_insight': (
-            "Survival analysis reveals WHEN default is likely, not just IF. "
-            "Deep subprime borrowers show 50% default probability by month 8-10, "
-            "while prime borrowers maintain >85% survival at 24 months. "
-            "The Cox PH model shows credit score and interest rate are the strongest "
-            "drivers of hazard, with each 100-point credit score increase reducing "
-            "instantaneous default risk by ~35%. This temporal risk information "
-            "enables proactive early-warning interventions and risk-based pricing."
-        ),
-    }
-    
-    results_path = os.path.join(reports_dir, 'survival_results.json')
-    with open(results_path, 'w') as f:
-        json.dump(results, f, indent=2)
-    
-    print(f"  → Results saved to {results_path}")
-    
-    # ============================================================
-    # PRINT FINAL SUMMARY
-    # ============================================================
-    print("\n" + "="*70)
-    print("PIPELINE COMPLETE — KEY TAKEAWAYS")
-    print("="*70)
-    
-    print("\n📊 DATASET: 5,000 synthetic loans, 35% censored at 24 months")
-    
-    print("\n📈 KAPLAN-MEIER RESULTS:")
-    for _, row in km_summary.iterrows():
-        band = row['credit_band']
-        median = row['median_survival_months']
-        s24 = row['survival_24m']
-        print(f"   {band}")
-        print(f"     Median survival: {median:.1f} months | 24m survival: {s24:.1%}")
-    
-    print("\n🔬 COX PH MODEL:")
-    print(f"   Concordance Index: {c_index:.4f}")
-    print("   Top drivers of default hazard:")
-    hr_sorted = hr_table.sort_values('hazard_ratio', ascending=False)
-    for _, row in hr_sorted.head(3).iterrows():
-        var = row['covariate'].replace('_', ' ').title()
-        hr = row['hazard_ratio']
-        print(f"     - {var}: HR={hr:.3f}")
-    
-    print("\n👤 NEW APPLICANT PREDICTION:")
-    print(f"   Credit Score: {applicant['credit_score']} → {profile['assigned_band']}")
-    print(f"   12-month survival: {profile['survival_12m']:.1%}")
-    print(f"   24-month survival: {profile['survival_24m']:.1%}")
-    print(f"   Relative risk score: {profile['relative_risk_score']:.3f}")
-    
-    print("\n📁 OUTPUT FILES:")
-    print(f"   - {results_path}")
-    print(f"   - reports/kaplan_meier_curves.png")
-    print(f"   - reports/chiizer_curves.png")
-    print(f"   - reports/applicant_survival_prediction.png")
-    
-    print("\n" + "="*70)
-    print("💡 KEY BUSINESS INSIGHT")
-    print("="*70)
-    print(results['business_insight'])
-    print("="*70)
-    
-    return results
+
+    out_path = "reports/survival_results.json"
+    with open(out_path, "w") as f:
+        json.dump(output, f, indent=2, default=str)
+    print(f"\nSaved {out_path}")
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("PIPELINE COMPLETE")
+    print("=" * 60)
+    summary = (
+        f"n=5000 | Defaults: {data['event_default'].sum()} | "
+        f"Censored: {(data['event_default']==0).sum()}\n"
+        f"Concordance: {cox_results['concordance_index']}\n"
+        f"KM plot saved to reports/km_survival_curves.png"
+    )
+    print(summary)
+    return output
 
 
-if __name__ == '__main__':
-    results = run_pipeline()
+if __name__ == "__main__":
+    main()

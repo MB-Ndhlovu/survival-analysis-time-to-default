@@ -1,1 +1,1 @@
-# src/__init__.py
+"""Survival Analysis src package."""
