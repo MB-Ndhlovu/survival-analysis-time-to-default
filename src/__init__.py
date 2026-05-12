@@ -1,1 +1,1 @@
-"""Survival Analysis src package."""
+"""Survival Analysis for Credit Risk - Time-to-Default Modeling"""
