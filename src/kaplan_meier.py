@@ -1,80 +1,99 @@
-"""Kaplan-Meier survival curves by credit score band."""
+"""
+Kaplan-Meier survival curves for credit score bands.
+Non-parametric estimation of survival functions.
+"""
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from lifelines import KaplanMeierFitter
 
-def fit_kaplan_meier(df):
+
+def fit_kaplan_meier(df, duration_col='time_end', event_col='event_default'):
     """
-    Fit Kaplan-Meier curves for credit score bands and compute median survival times.
+    Fit Kaplan-Meier curves for each credit score band.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame from data_loader.py with time_start, time_end, event_default
-
-    Returns
-    -------
-    dict
-        Results containing survival curves, median times, and 12/24-month survival probs
+    Returns dict with fitted fitters and summary statistics.
     """
-    # Define credit score bands
-    bands = {
-        'Very Poor (<580)': (df['credit_score'] < 580),
-        'Fair (580-669)': (df['credit_score'] >= 580) & (df['credit_score'] < 670),
-        'Good (670-739)': (df['credit_score'] >= 670) & (df['credit_score'] < 740),
-        'Excellent (740+)': (df['credit_score'] >= 740),
-    }
-
+    bands = ['Very Poor', 'Fair', 'Good', 'Excellent']
     results = {}
-    fig, ax = plt.subplots(figsize=(10, 6))
 
-    for label, mask in bands.items():
-        df_band = df[mask].copy()
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Plot 1: All bands on same plot
+    ax1 = axes[0]
+    colors = {'Very Poor': '#d62728', 'Fair': '#ff7f0e', 'Good': '#2ca02c', 'Excellent': '#1f77b4'}
+
+    for band in bands:
+        band_df = df[df['credit_band'] == band]
+
         kmf = KaplanMeierFitter()
-        kmf.fit(df_band['time_end'], df_band['event_default'], label=label)
+        kmf.fit(band_df[duration_col], band_df[event_col], label=band)
 
-        # Median survival time (time when S(t) <= 0.5)
-        median_survival = kmf.median_survival_time_
-        if pd.isna(median_survival):
-            median_survival = "> 24 months (not reached)"
-
-        # 12-month and 24-month survival probabilities
-        surv_at_12 = kmf.survival_function_.reindex([12.0]).values[0][0] if 12.0 <= kmf.survival_function_.index.max() else None
-        surv_at_24 = kmf.survival_function_.reindex([24.0]).values[0][0] if 24.0 <= kmf.survival_function_.index.max() else None
-
-        results[label] = {
-            'kmf': kmf,
-            'median_survival_time': median_survival,
-            'survival_12_month': float(surv_at_12) if surv_at_12 is not None else None,
-            'survival_24_month': float(surv_at_24) if surv_at_24 is not None else None,
-            'n_obs': int(mask.sum()),
-            'n_defaults': int(df_band['event_default'].sum()),
+        results[band] = {
+            'fitter': kmf,
+            'median_survival': kmf.median_survival_time_,
+            'survival_at_12': kmf.predict(12),
+            'survival_at_24': kmf.predict(24),
         }
 
-        kmf.plot_survival_function(ax=ax)
+        kmf.plot_survival_function(ax=ax1, color=colors[band])
 
-    ax.set_xlabel('Months since loan origination')
-    ax.set_ylabel('Survival Probability')
-    ax.set_title('Kaplan-Meier Survival Curves by Credit Score Band')
-    ax.legend(loc='lower left')
-    ax.set_ylim(0, 1.05)
-    ax.grid(True, alpha=0.3)
+    ax1.set_xlabel('Months')
+    ax1.set_ylabel('Survival Probability')
+    ax1.set_title('Kaplan-Meier Survival Curves by Credit Score Band')
+    ax1.legend(loc='lower left')
+    ax1.set_ylim(0, 1.05)
+    ax1.grid(True, alpha=0.3)
+
+    # Plot 2: Cumulative hazard
+    ax2 = axes[1]
+    for band in bands:
+        kmf = results[band]['fitter']
+        cumulative_hazard = 1 - kmf.survival_function_
+        ax2.plot(kmf.survival_function_.index, cumulative_hazard,
+                 label=band, color=colors[band])
+
+    ax2.set_xlabel('Months')
+    ax2.set_ylabel('Cumulative Default Probability')
+    ax2.set_title('Cumulative Default by Credit Score Band')
+    ax2.legend(loc='lower right')
+    ax2.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig('/home/workspace/Projects/survival-analysis-time-to-default/reports/kaplan_meier_curves.png', dpi=150)
+    plt.savefig('/home/workspace/Projects/survival-analysis-time-to-default/reports/kaplan_meier_curves.png',
+                dpi=150, bbox_inches='tight')
     plt.close()
 
     return results
 
-if __name__ == '__main__':
+
+def print_summary(results):
+    """Print summary statistics for each band."""
+    print("\n" + "="*70)
+    print("KAPLAN-MEIER SURVIVAL ANALYSIS SUMMARY")
+    print("="*70)
+
+    for band in ['Very Poor', 'Fair', 'Good', 'Excellent']:
+        r = results[band]
+        kmf = r['fitter']
+
+        print(f"\n{band} Credit Score Band:")
+        print(f"  Median Survival Time: {r['median_survival']:.1f} months")
+        print(f"  12-Month Survival:    {r['survival_at_12']*100:.1f}%")
+        print(f"  24-Month Survival:    {r['survival_at_24']*100:.1f}%")
+
+        # Confidence intervals
+        ci = kmf.confidence_interval_
+        print(f"  12-month 95% CI:      [{ci.iloc[11, 0]*100:.1f}%, {ci.iloc[11, 1]*100:.1f}%]")
+
+    print("\n" + "="*70)
+
+
+if __name__ == "__main__":
     from data_loader import generate_loan_data
+
     df = generate_loan_data()
     results = fit_kaplan_meier(df)
-    for band, res in results.items():
-        print(f"\n{band}:")
-        print(f"  N={res['n_obs']}, Defaults={res['n_defaults']}")
-        print(f"  Median survival: {res['median_survival_time']}")
-        print(f"  12-mo survival: {res['survival_12_month']:.4f}")
-        print(f"  24-mo survival: {res['survival_24_month']:.4f}")
+    print_summary(results)
+    print("\nPlot saved to reports/kaplan_meier_curves.png")

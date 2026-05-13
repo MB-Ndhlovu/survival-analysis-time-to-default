@@ -1,204 +1,101 @@
 {
-  "km_results": {
-    "Very Poor (<580)": {
-      "n_obs": 926,
-      "n_defaults": 608,
-      "median_survival_time": "11.67",
-      "survival_12_month": 0.4902807775377971,
-      "survival_24_month": 0.34341252699784014
+  "dataset_info": {
+    "n_loans": 5000,
+    "n_defaults": 3250,
+    "n_censored": 1750,
+    "censorship_rate": 0.35
+  },
+  "kaplan_meier": {
+    "Very Poor": {
+      "median_survival_months": 19.021582416440022,
+      "survival_at_12_months": 0.7005813953488372,
+      "survival_at_24_months": 0.3672480620155038
     },
-    "Fair (580-669)": {
-      "n_obs": 1425,
-      "n_defaults": 917,
-      "median_survival_time": "19.57",
-      "survival_12_month": 0.6196491228070171,
-      "survival_24_month": 0.35649122807017536
+    "Fair": {
+      "median_survival_months": 18.681630075630277,
+      "survival_at_12_months": 0.6872616323417237,
+      "survival_at_24_months": 0.356979405034325
     },
-    "Good (670-739)": {
-      "n_obs": 1207,
-      "n_defaults": 799,
-      "median_survival_time": "24.0",
-      "survival_12_month": 0.6826843413421708,
-      "survival_24_month": 0.3380281690140844
+    "Good": {
+      "median_survival_months": 18.005108370246045,
+      "survival_at_12_months": 0.6649789029535869,
+      "survival_at_24_months": 0.34177215189873417
     },
-    "Excellent (740+)": {
-      "n_obs": 1442,
-      "n_defaults": 934,
-      "median_survival_time": "24.0",
-      "survival_12_month": NaN,
-      "survival_24_month": 0.3522884882108182
+    "Excellent": {
+      "median_survival_months": 18.59608471833018,
+      "survival_at_12_months": 0.6949728260869565,
+      "survival_at_24_months": 0.33831521739130443
     }
   },
-  "cox_ph": {
-    "concordance_index": 0.5509,
-    "interpretations": {
-      "income": {
-        "hazard_ratio": 0.9714,
-        "p_value": 0.1055,
-        "significant": false,
-        "interpretation": "A 1 SD increase in income decreases default risk by 2.9% (HR=0.971)"
-      },
-      "credit_score": {
-        "hazard_ratio": 0.9108,
-        "p_value": 0.0,
-        "significant": true,
-        "interpretation": "A 1 SD increase in credit_score decreases default risk by 8.9% (HR=0.911)"
-      },
-      "employment_years": {
-        "hazard_ratio": 1.0182,
-        "p_value": 0.2966,
-        "significant": false,
-        "interpretation": "A 1 SD increase in employment_years increases default risk by 1.8% (HR=1.018)"
-      },
-      "debt_to_income": {
-        "hazard_ratio": 1.0117,
-        "p_value": 0.5056,
-        "significant": false,
-        "interpretation": "A 1 SD increase in debt_to_income increases default risk by 1.2% (HR=1.012)"
-      },
-      "loan_amount": {
-        "hazard_ratio": 0.9845,
-        "p_value": 0.3771,
-        "significant": false,
-        "interpretation": "A 1 SD increase in loan_amount decreases default risk by 1.5% (HR=0.985)"
-      },
-      "interest_rate": {
-        "hazard_ratio": 1.0275,
-        "p_value": 0.1209,
-        "significant": false,
-        "interpretation": "A 1 SD increase in interest_rate increases default risk by 2.8% (HR=1.028)"
-      },
-      "LTV_ratio": {
-        "hazard_ratio": 0.9995,
-        "p_value": 0.9755,
-        "significant": false,
-        "interpretation": "A 1 SD increase in LTV_ratio decreases default risk by 0.1% (HR=0.999)"
-      }
-    }
-  },
-  "chiizer_summary": {
+  "cox_ph_hazard_ratios": {
+    "income": {
+      "hazard_ratio": 1.0051897682176196,
+      "coef": 0.005176347783146983,
+      "p_value": 0.7685452766294046
+    },
     "credit_score": {
-      "Q1": {
-        "n": 1260,
-        "default_rate": 0.6444444444444445,
-        "survival_12": 0.534126984126984,
-        "survival_24": 0.3555555555555554
-      },
-      "Q2": {
-        "n": 1262,
-        "default_rate": 0.650554675118859,
-        "survival_12": 0.6212361331220286,
-        "survival_24": 0.34944532488114116
-      },
-      "Q3": {
-        "n": 1233,
-        "default_rate": 0.6585563665855637,
-        "survival_12": 0.6918085969180862,
-        "survival_24": 0.3414436334144363
-      },
-      "Q4": {
-        "n": 1245,
-        "default_rate": 0.653012048192771,
-        "survival_12": null,
-        "survival_24": 0.3469879518072291
-      }
+      "hazard_ratio": 1.0159945188940427,
+      "coef": 0.01586795435241015,
+      "p_value": 0.5692871789015213
+    },
+    "employment_years": {
+      "hazard_ratio": 0.9992256499584637,
+      "coef": -0.0007746500053910575,
+      "p_value": 0.9649172076954091
     },
     "debt_to_income": {
-      "Q1": {
-        "n": 1252,
-        "default_rate": 0.6349840255591054,
-        "survival_12": null,
-        "survival_24": 0.36501597444089473
-      },
-      "Q2": {
-        "n": 1250,
-        "default_rate": 0.66,
-        "survival_12": null,
-        "survival_24": 0.3400000000000002
-      },
-      "Q3": {
-        "n": 1248,
-        "default_rate": 0.6634615384615384,
-        "survival_12": 0.6522435897435893,
-        "survival_24": 0.3365384615384614
-      },
-      "Q4": {
-        "n": 1250,
-        "default_rate": 0.648,
-        "survival_12": 0.6552000000000004,
-        "survival_24": 0.352
-      }
+      "hazard_ratio": 0.9931122293072124,
+      "coef": -0.006911600872929347,
+      "p_value": 0.6960550193327866
     },
-    "LTV_ratio": {
-      "Q1": {
-        "n": 1250,
-        "default_rate": 0.6528,
-        "survival_12": null,
-        "survival_24": 0.3472000000000002
-      },
-      "Q2": {
-        "n": 1250,
-        "default_rate": 0.6456,
-        "survival_12": 0.6567999999999999,
-        "survival_24": 0.3544000000000001
-      },
-      "Q3": {
-        "n": 1250,
-        "default_rate": 0.6656,
-        "survival_12": null,
-        "survival_24": 0.3344000000000001
-      },
-      "Q4": {
-        "n": 1250,
-        "default_rate": 0.6424,
-        "survival_12": 0.6432000000000003,
-        "survival_24": 0.35760000000000025
-      }
+    "loan_amount": {
+      "hazard_ratio": 0.9944255188637248,
+      "coef": -0.005590076540773919,
+      "p_value": 0.7524463959655836
     },
     "interest_rate": {
-      "Q1": {
-        "n": 1254,
-        "default_rate": 0.6411483253588517,
-        "survival_12": 0.6594896331738433,
-        "survival_24": 0.35885167464114825
-      },
-      "Q2": {
-        "n": 1247,
-        "default_rate": 0.644747393744988,
-        "survival_12": 0.6672012830793905,
-        "survival_24": 0.35525260625501204
-      },
-      "Q3": {
-        "n": 1252,
-        "default_rate": 0.6573482428115016,
-        "survival_12": 0.6533546325878592,
-        "survival_24": 0.34265175718849844
-      },
-      "Q4": {
-        "n": 1247,
-        "default_rate": 0.6631916599839615,
-        "survival_12": 0.6174819566960703,
-        "survival_24": 0.33680834001603843
-      }
+      "hazard_ratio": 0.9875501956709878,
+      "coef": -0.01252795243948647,
+      "p_value": 0.6527962099554403
+    },
+    "LTV_ratio": {
+      "hazard_ratio": 1.0006957940566859,
+      "coef": 0.000695552104227317,
+      "p_value": 0.9685130120977096
     }
   },
-  "new_applicant_prediction": {
-    "applicant": {
-      "income": 55000,
-      "credit_score": 620,
-      "employment_years": 2.5,
-      "debt_to_income": 0.35,
-      "loan_amount": 25000,
-      "interest_rate": 0.12,
-      "LTV_ratio": 0.85
+  "top_risk_factors": [
+    {
+      "variable": "credit_score",
+      "hazard_ratio": 1.0159945188940427,
+      "interpretation": "1 SD increase \u2192 1.02x default risk"
     },
-    "prediction": {
-      "survival_6mo": 0.7916,
-      "survival_12mo": 0.6494,
-      "survival_18mo": 0.5654,
-      "survival_24mo": 0.3484,
-      "risk_tier": "Medium-High Risk",
-      "linear_predictor": 0.1168
+    {
+      "variable": "income",
+      "hazard_ratio": 1.0051897682176196,
+      "interpretation": "1 SD increase \u2192 1.01x default risk"
+    },
+    {
+      "variable": "LTV_ratio",
+      "hazard_ratio": 1.0006957940566859,
+      "interpretation": "1 SD increase \u2192 1.00x default risk"
     }
-  }
+  ],
+  "applicant_predictions": [
+    {
+      "months_12_survival": 0.7005813953488372,
+      "months_24_survival": 0.3672480620155038,
+      "median_survival_months": 19.021582416440022
+    },
+    {
+      "months_12_survival": 0.6649789029535869,
+      "months_24_survival": 0.34177215189873417,
+      "median_survival_months": 18.005108370246045
+    },
+    {
+      "months_12_survival": 0.6949728260869565,
+      "months_24_survival": 0.33831521739130443,
+      "median_survival_months": 18.59608471833018
+    }
+  ]
 }

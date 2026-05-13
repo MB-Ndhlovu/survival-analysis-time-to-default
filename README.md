@@ -2,52 +2,38 @@
 
 ## Overview
 
-This project applies survival analysis techniques to credit risk modeling, predicting not just *whether* a loan defaults, but *when* default is most likely to occur.
+This project applies survival analysis techniques to credit risk modeling, moving beyond binary default prediction to understand **when** default is likely to occur.
 
 ## Survival Analysis Concepts
 
-### Why Survival Analysis?
-
-Traditional credit scoring models output a binary prediction: default / no default. Survival analysis goes further by modeling the **time to event**, answering:
-- What is the probability a borrower survives (doesn't default) beyond month 12? 24?
-- Which risk factors accelerate or delay default timing?
-- How does default risk change over the life of the loan?
-
 ### Key Terms
 
-- **Survival Function S(t)**: Probability that the event (default) has not occurred by time t
-- **Hazard Function h(t)**: Instantaneous rate of default at time t, given survival to that point
-- **Censoring**: Observations where default hasn't occurred by the observation end — treated differently in estimation
-- **Kaplan-Meier Estimator**: Non-parametric estimate of S(t) from censored data
-- **Cox Proportional Hazards**: Semi-parametric model relating covariates to hazard rate
+- **Survival Function S(t)**: The probability that a loan does not default beyond time `t`
+- **Hazard Function h(t)**: The instantaneous rate of default at time `t`, given survival up to `t`
+- **Censoring**: Loans that haven't defaulted by the observation end (lost to follow-up)
+- **Median Survival Time**: Time at which 50% of loans have defaulted
 
-### Business Application
+### Why Survival Analysis for Credit Risk?
 
-In credit risk, survival analysis enables:
-- **Better pricing**: Adjust loan pricing based on expected time-to-default
-- **Provision calculations**: More accurate expected loss estimates
-- **Portfolio monitoring**: Track cohort survival curves over time
-- **Early warning systems**: Identify borrowers approaching high-risk periods
+Traditional default models answer: *Will this loan default?* (binary classification)
 
-## Project Structure
+Survival analysis answers: *When will this loan default, and what factors accelerate or delay default?*
 
-```
-.
-├── README.md
-├── requirements.txt
-├── run_pipeline.py
-├── src/
-│   ├── __init__.py
-│   ├── data_loader.py
-│   ├── kaplan_meier.py
-│   ├── cox_ph.py
-│   ├── chiizer.py
-│   └── predict_survival.py
-└── reports/
-    └── survival_results.json
-```
+This enables:
+- More precise pricing by time-period
+- Better reserve calculations
+- Targeted early intervention strategies
 
-## Usage
+## Files
+
+- `src/data_loader.py` - Synthetic loan data generator with censorship
+- `src/kaplan_meier.py` - Non-parametric survival curves by credit band
+- `src/cox_ph.py` - Semi-parametric hazard model for risk factors
+- `src/chiizer.py` - Discretize variables into risk categories
+- `src/predict_survival.py` - Predict survival for new applicants
+- `run_pipeline.py` - Execute full analysis pipeline
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
