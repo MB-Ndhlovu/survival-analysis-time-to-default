@@ -1,93 +1,118 @@
-"""
-Cox Proportional Hazards model for identifying default risk factors.
-Semi-parametric approach estimates hazard ratios for each covariate.
-"""
+"""Cox Proportional Hazards model for default prediction."""
 
 import numpy as np
 import pandas as pd
 from lifelines import CoxPHFitter
 
+from .data_loader import get_credit_score_band
 
-def fit_cox_ph(df, duration_col='time_end', event_col='event_default'):
-    """
-    Fit Cox PH model to identify factors affecting default hazard.
 
-    Returns fitted model and coefficient summary.
+def fit_cox_ph(
+    df: pd.DataFrame,
+    time_col: str = "time_end",
+    event_col: str = "event_default",
+) -> tuple:
+    """Fit Cox PH model and return coefficients with hazard ratios.
+
+    Returns (coefficients DataFrame, fitted model).
     """
     # Prepare features
-    feature_cols = ['income', 'credit_score', 'employment_years',
-                    'debt_to_income', 'loan_amount', 'interest_rate', 'LTV_ratio']
+    features = [
+        "credit_score",
+        "employment_years",
+        "debt_to_income",
+        "loan_amount",
+        "interest_rate",
+        "LTV_ratio",
+    ]
 
-    # Normalize continuous variables for better interpretation
-    X = df[feature_cols].copy()
-    for col in feature_cols:
-        X[col] = (X[col] - X[col].mean()) / X[col].std()
+    df_model = df[features + [time_col, event_col]].copy()
 
-    # Fit Cox PH model
-    cph = CoxPHFitter()
-    cph.fit(pd.concat([X, df[[duration_col, event_col]]], axis=1),
-            duration_col=duration_col,
-            event_col=event_col)
+    # Add credit band as categorical
+    df_model["credit_band"] = df_model["credit_score"].apply(get_credit_score_band)
+    # Create binary indicators for bands (drop one for reference)
+    df_model["is_subprime"] = (df_model["credit_band"] == "Deep Subprime (< 580)").astype(int)
+    df_model["is_near_prime"] = (df_model["credit_band"] == "Near Prime (670-739)").astype(int)
+    df_model["is_prime"] = (df_model["credit_band"] == "Prime (740+)").astype(int)
 
-    return cph
+    # Drop credit_score in favor of bands to avoid multicollinearity
+    features_for_model = [
+        "is_subprime",
+        "is_near_prime",
+        "is_prime",
+        "employment_years",
+        "debt_to_income",
+        "loan_amount",
+        "LTV_ratio",
+    ]
 
+    cph = CoxPHFitter(penalizer=0.1)
+    cph.fit(df_model[features_for_model + [time_col, event_col]], duration_col=time_col, event_col=event_col)
 
-def print_cox_summary(cph):
-    """Print formatted Cox PH results."""
-    print("\n" + "="*70)
-    print("COX PROPORTIONAL HAZARDS MODEL")
-    print("="*70)
-    print("\nCoefficients and Hazard Ratios:")
+    # Extract coefficients
+    coef_df = pd.DataFrame({
+        "coefficient": cph.params_,
+        "hazard_ratio": np.exp(cph.params_),
+        "se": cph.standard_errors_,
+        "z": cph.summary["z"].values if "z" in cph.summary else cph.coef_z,
+        "p": cph.summary["p"].values if "p" in cph.summary else cph.coef_p,
+    })
 
-    # Get summary DataFrame
-    summary = cph.summary.copy()
-    summary['hazard_ratio'] = np.exp(summary['coef'])
-    summary['hr_lower'] = np.exp(summary['coef lower 95%'])
-    summary['hr_upper'] = np.exp(summary['coef upper 95%'])
-
-    print(f"\n{'Variable':<20} {'Coef':>8} {'HR':>8} {'95% CI':>15} {'p-value':>10}")
-    print("-" * 65)
-
-    for idx, row in summary.iterrows():
-        ci = f"[{row['hr_lower']:.2f}, {row['hr_upper']:.2f}]"
-        sig = '***' if row['p'] < 0.001 else '**' if row['p'] < 0.01 else '*' if row['p'] < 0.05 else ''
-        print(f"{idx:<20} {row['coef']:>8.3f} {row['hazard_ratio']:>8.3f} {ci:>15} {row['p']:>10.4f} {sig}")
-
-    print("\nInterpretation:")
-    print("  HR > 1: Increases hazard (faster default)")
-    print("  HR < 1: Decreases hazard (slower default)")
-    print("  HR = 1: No effect")
-
-    # Concordance index
-    print(f"\nModel Concordance Index: {cph.concordance_index_:.4f}")
-    print("(0.5 = random, 0.7+ = good, 0.8+ = excellent fit)")
-
-    return summary
+    return coef_df, cph
 
 
-def get_top_risk_factors(summary, n=3):
-    """Return the top n risk factors by hazard ratio."""
-    sorted_hr = summary.sort_values('hazard_ratio', ascending=False)
-    top_risks = []
+def interpret_coefficients(coef_df: pd.DataFrame) -> pd.DataFrame:
+    """Interpret Cox PH coefficients into actionable insights."""
+    interpretations = []
 
-    for idx, row in sorted_hr.head(n).iterrows():
-        top_risks.append({
-            'variable': idx,
-            'hazard_ratio': row['hazard_ratio'],
-            'interpretation': f"1 SD increase → {row['hazard_ratio']:.2f}x default risk"
+    for var, row in coef_df.iterrows():
+        hr = row["hazard_ratio"]
+        p = row["p"]
+
+        # Interpret hazard ratio
+        if hr > 1:
+            direction = "increases"
+            effect = f"{((hr-1)*100):.1f}% higher"
+        else:
+            direction = "decreases"
+            effect = f"{((1-hr)*100):.1f}% lower"
+
+        significance = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
+
+        interpretations.append({
+            "variable": var,
+            "hazard_ratio": round(hr, 4),
+            "effect": f"{effect} default risk",
+            "p_value": round(p, 4),
+            "significance": significance,
         })
 
-    return top_risks
+    return pd.DataFrame(interpretations)
+
+
+def run(df: pd.DataFrame) -> tuple:
+    """Run Cox PH analysis."""
+    print("\n=== Cox Proportional Hazards Model ===")
+
+    coef_df, cph = fit_cox_ph(df)
+
+    print("\nHazard Ratios:")
+    print(coef_df[["hazard_ratio"]].round(4).to_string())
+
+    print("\n--- Full Coefficient Summary ---")
+    print(coef_df.round(4).to_string())
+
+    # Concordance index (model fit)
+    print(f"\nConcordance Index: {round(cph.concordance_index_, 4)}")
+
+    return coef_df, cph
 
 
 if __name__ == "__main__":
-    from data_loader import generate_loan_data
+    from .data_loader import generate_loan_data
 
     df = generate_loan_data()
-    cph = fit_cox_ph(df)
-    summary = print_cox_summary(cph)
-    top_risks = get_top_risk_factors(summary)
-
-    print("\nTop Risk Factors:")
-    for i, risk in enumerate(top_risks, 1):
-        print(f"  {i}. {risk['variable']}: {risk['interpretation']}")
+    coef_df, cph = run(df)
+    interp = interpret_coefficients(coef_df)
+    print("\nInterpretation:")
+    print(interp.to_string(index=False))

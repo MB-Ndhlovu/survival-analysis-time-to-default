@@ -2,40 +2,61 @@
 
 ## Overview
 
-This project applies survival analysis techniques to credit risk modeling, moving beyond binary default prediction to understand **when** default is likely to occur.
+This project applies survival analysis techniques to credit default prediction. Unlike binary classification models that only answer "will this borrower default?", survival analysis answers "when will default occur?" — giving lenders more actionable information for risk management and pricing.
 
-## Survival Analysis Concepts
+## Core Concepts
 
-### Key Terms
+### Survival Function S(t)
+The probability that a borrower has NOT defaulted by time `t`:
+$$S(t) = P(T > t)$$
 
-- **Survival Function S(t)**: The probability that a loan does not default beyond time `t`
-- **Hazard Function h(t)**: The instantaneous rate of default at time `t`, given survival up to `t`
-- **Censoring**: Loans that haven't defaulted by the observation end (lost to follow-up)
-- **Median Survival Time**: Time at which 50% of loans have defaulted
+### Hazard Function h(t)
+The instantaneous failure rate at time `t`, given survival up to `t`:
+$$h(t) = \lim_{dt \to 0} \frac{P(t \leq T < t+dt \mid T \geq t)}{dt}$$
 
-### Why Survival Analysis for Credit Risk?
+### Kaplan-Meier Estimator
+Non-parametric estimator of the survival function that handles censored data naturally:
+$$\hat{S}(t) = \prod_{t_i < t} \frac{n_i - d_i}{n_i}$$
+where $n_i$ is the number at risk and $d_i$ is the number of defaults at time $t_i$.
 
-Traditional default models answer: *Will this loan default?* (binary classification)
+### Cox Proportional Hazards Model
+Semi-parametric model that estimates the effect of covariates on hazard:
+$$h(t) = h_0(t) \cdot \exp(\beta_1 x_1 + \beta_2 x_2 + ...)$$
 
-Survival analysis answers: *When will this loan default, and what factors accelerate or delay default?*
+### Censoring
+Borrowers who haven't defaulted by the observation end are "censored" — their true default time is unknown but at least 24 months. The Kaplan-Meier estimator properly handles this.
 
-This enables:
-- More precise pricing by time-period
-- Better reserve calculations
-- Targeted early intervention strategies
+## Business Application
+
+In credit risk, survival analysis enables:
+- **Risk-based pricing**: Charge higher rates to borrowers likely to default early
+- **Expected loss forecasting**: Calculate lifetime expected loss more accurately
+- **Portfolio management**: Identify segments with deteriorating survival curves
+- **Regulatory capital**: Better estimate of loss given default timing
 
 ## Files
 
-- `src/data_loader.py` - Synthetic loan data generator with censorship
-- `src/kaplan_meier.py` - Non-parametric survival curves by credit band
-- `src/cox_ph.py` - Semi-parametric hazard model for risk factors
-- `src/chiizer.py` - Discretize variables into risk categories
-- `src/predict_survival.py` - Predict survival for new applicants
-- `run_pipeline.py` - Execute full analysis pipeline
+| File | Description |
+|------|-------------|
+| `src/data_loader.py` | Generate synthetic loan data with 5000 observations |
+| `src/kaplan_meier.py` | Fit and visualize Kaplan-Meier survival curves |
+| `src/cox_ph.py` | Fit Cox PH model, compute hazard ratios |
+| `src/chiizer.py` | Bin variables into risk categories, compare curves |
+| `src/predict_survival.py` | Predict survival curve for new applicants |
+| `run_pipeline.py` | Execute full analysis pipeline |
 
-## Installation
+## Credit Score Bands
 
-```bash
-pip install -r requirements.txt
-python run_pipeline.py
-```
+| Band | Score Range | Risk Profile |
+|------|-------------|--------------|
+| Deep Subprime | < 580 | High risk |
+| Subprime | 580-669 | Elevated risk |
+| Near Prime | 670-739 | Moderate risk |
+| Prime | 740+ | Low risk |
+
+## Key Metrics
+
+- **Median survival time**: Time at which 50% of borrowers have defaulted
+- **12-month survival probability**: P(no default in first year)
+- **24-month survival probability**: P(no default in first 2 years)
+- **Hazard ratio**: Multiplicative effect on default risk per unit change in predictor
